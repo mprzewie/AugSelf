@@ -147,8 +147,8 @@ def moco(backbone,
 
         aug_keys = sorted(d1.keys())
 
-        print(aug_keys)
-        print({k: v.shape for (k,v) in d1.items()})
+        # print(aug_keys)
+        # print({k: v.shape for (k,v) in d1.items()})
 
         d1_cat = torch.concat([d1[k] for k in aug_keys], dim=1)
         d2_cat = torch.concat([d2[k] for k in aug_keys], dim=1)
