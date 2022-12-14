@@ -20,7 +20,7 @@ class MultiView:
 
 class RandomResizedCrop(T.RandomResizedCrop):
     def forward(self, img):
-        W, H = F._get_image_size(img)
+        W, H = F.get_image_size(img)
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
         img = F.resized_crop(img, i, j, h, w, self.size, self.interpolation)
         tensor = F.to_tensor(img)
@@ -130,6 +130,9 @@ def _extract_w(t):
         w[to_apply] = t._params['thresholds_factor']
         return w
 
+    elif isinstance(t, K.RandomGrayscale):
+        w = t._params["batch_prob"].float().reshape(-1, 1)
+        return w
 
 def extract_diff(transforms1, transforms2, crop1, crop2):
     diff = {}
@@ -183,3 +186,50 @@ def extract_diff(transforms1, transforms2, crop1, crop2):
 
     return diff
 
+
+def extract_aug_descriptors(
+    transforms1, crop1
+):
+    results = {}
+    for t1 in transforms1:
+        if isinstance(t1, K.RandomHorizontalFlip):
+            f1 = t1._params['batch_prob']
+            break
+
+    center1 = crop1[:, :2] + crop1[:, 2:] / 2
+    center1[f1, 1] = 1 - center1[f1, 1]
+    results['crop'] = torch.cat([center1, crop1[:, 2:]], 1)
+    results['flip'] = f1.float().unsqueeze(-1)
+    for t1 in transforms1:
+        if isinstance(t1, K.RandomHorizontalFlip):
+            pass
+
+        elif isinstance(t1, K.RandomGrayscale):
+            results["grayscale"] = _extract_w(t1)
+
+        elif isinstance(t1, GaussianBlur):
+            w1 = _extract_w(t1)
+            results['blur'] = w1
+
+        elif isinstance(t1, K.Normalize):
+            pass
+
+        elif isinstance(t1, K.ColorJitter):
+            w1 = _extract_w(t1)
+            results['color'] = w1
+
+        elif isinstance(t1, (nn.Identity, nn.Sequential)):
+            pass
+
+        elif isinstance(t1, RandomRotation):
+            w1 = _extract_w(t1)
+            results['rot'] = (w1 + 4) % 4
+
+        elif isinstance(t1, K.RandomSolarize):
+            w1 = _extract_w(t1)
+            results['sol'] = w1
+
+        else:
+            raise Exception(f'Unknown transform: {str(t1.__class__)}')
+
+    return results

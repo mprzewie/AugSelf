@@ -157,9 +157,9 @@ def load_pretrain_datasets(dataset='cifar10',
                            GaussianBlur(9, (0.1, 2.0)),
                            K.Normalize(mean, std))
 
-        trainset = STL10(datadir, split='train+unlabeled', transform=train_transform)
-        valset   = STL10(datadir, split='train',           transform=test_transform)
-        testset  = STL10(datadir, split='test',            transform=test_transform)
+        trainset = STL10(datadir, split='train+unlabeled', transform=train_transform, download=True)
+        valset   = STL10(datadir, split='train',           transform=test_transform, download=True)
+        testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
 
     elif dataset == 'stl10_rot':
         mean = torch.tensor([0.43, 0.42, 0.39])
@@ -208,9 +208,9 @@ def load_pretrain_datasets(dataset='cifar10',
                            GaussianBlur(9, (0.1, 2.0)),
                            K.Normalize(mean, std))
 
-        trainset = STL10(datadir, split='train+unlabeled', transform=train_transform)
-        valset   = STL10(datadir, split='train',           transform=test_transform)
-        testset  = STL10(datadir, split='test',            transform=test_transform)
+        trainset = STL10(datadir, split='train+unlabeled', transform=train_transform, download=True)
+        valset   = STL10(datadir, split='train',           transform=test_transform, download=True)
+        testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
 
     else:
         raise Exception(f'Unknown dataset {dataset}')
@@ -254,15 +254,15 @@ def load_datasets(dataset='cifar10',
         num_classes = 101
 
     elif dataset == 'cifar10':
-        trainval   = CIFAR10(root=datadir, train=True,  transform=transform)
+        trainval   = CIFAR10(root=datadir, train=True,  transform=transform, download=True)
         train, val = random_split(trainval, [45000, 5000], generator=generator(43))
-        test       = CIFAR10(root=datadir, train=False, transform=transform)
+        test       = CIFAR10(root=datadir, train=False, transform=transform, download=True)
         num_classes = 10
 
     elif dataset == 'cifar100':
-        trainval   = CIFAR100(root=datadir, train=True,  transform=transform)
+        trainval   = CIFAR100(root=datadir, train=True,  transform=transform, download=True)
         train, val = random_split(trainval, [45000, 5000], generator=generator(44))
-        test       = CIFAR100(root=datadir, train=False, transform=transform)
+        test       = CIFAR100(root=datadir, train=False, transform=transform, download=True)
         num_classes = 100
 
     elif dataset == 'sun397':
@@ -322,8 +322,8 @@ def load_datasets(dataset='cifar10',
         num_classes = 102
 
     elif dataset == 'stl10':
-        trainval   = STL10(root=datadir, split='train', transform=transform)
-        test       = STL10(root=datadir, split='test',  transform=transform)
+        trainval   = STL10(root=datadir, split='train', transform=transform, download=True)
+        test       = STL10(root=datadir, split='test',  transform=transform, download=True)
         train, val = random_split(trainval, [4500, 500], generator=generator(50))
         num_classes = 10
 

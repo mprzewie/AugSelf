@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from ignite.engine import Engine
 import ignite.distributed as idist
 
-from transforms import extract_diff
+from transforms import extract_aug_descriptors
 
 
 class SSObjective:
@@ -55,10 +55,10 @@ def prepare_training_batch(batch, t1, t2, device):
     with torch.no_grad():
         x1 = t1(x1.to(device)).detach()
         x2 = t2(x2.to(device)).detach()
-        diff1 = { k: v.to(device) for k, v in extract_diff(t1, t2, w1, w2).items() }
-        diff2 = { k: v.to(device) for k, v in extract_diff(t2, t1, w2, w1).items() }
+        desc_1 = { k: v.to(device) for k, v in extract_aug_descriptors(t1, w1).items() }
+        desc_2 = { k: v.to(device) for k, v in extract_aug_descriptors(t2, w2).items() }
 
-    return x1, x2, diff1, diff2
+    return x1, x2, desc_1, desc_2
 
 
 def simsiam(backbone,
@@ -114,7 +114,7 @@ def simsiam(backbone,
 
 def moco(backbone,
          projector,
-         ss_predictor: Dict[str, ],
+         ss_predictor: Dict[str, nn.Module],
          t1,
          t2,
          optimizers,
@@ -144,11 +144,27 @@ def moco(backbone,
             o.zero_grad()
 
         x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
+
+        aug_keys = sorted(d1.keys())
+
+        print(aug_keys)
+        print({k: v.shape for (k,v) in d1.items()})
+
+        d1_cat = torch.concat([d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.concat([d2[k] for k in aug_keys], dim=1)
+
+        # assert False, [d1_cat.shape, d2_cat.shape]
+        # assert False, [{k: v.shape for (k,v) in d.items()} for d in [d1, d2]]
         y1 = backbone(x1)
-        z1 = F.normalize(projector(y1))
+        y_d_1 = torch.concat([y1, d1_cat], dim=1)
+        z1 = F.normalize(
+            projector(y_d_1)
+        )
         with torch.no_grad():
             y2 = target_backbone(x2)
-            z2 = F.normalize(target_projector(y2))
+            y_d_2 = torch.concat([y2, d2_cat],  dim=1)
+            z2 = F.normalize(target_projector(y_d_2))
+
 
         l_pos = torch.einsum('nc,nc->n', [z1, z2]).unsqueeze(-1)
         l_neg = torch.einsum('nc,kc->nk', [z1, queue.clone().detach()])
@@ -157,10 +173,11 @@ def moco(backbone,
         loss = F.cross_entropy(logits, labels)
         outputs = dict(loss=loss, z1=z1, z2=z2)
 
-        ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
-        (loss+ss_losses['total']).backward()
-        for k, v in ss_losses.items():
-            outputs[f'ss/{k}'] = v
+        # ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
+        loss.backward()
+        # (loss+ss_losses['total']).backward()
+        # for k, v in ss_losses.items():
+        #     outputs[f'ss/{k}'] = v
 
         for o in optimizers:
             o.step()
