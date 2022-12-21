@@ -114,7 +114,7 @@ def simsiam(backbone,
 
 def moco(backbone,
          projector,
-         ss_predictor: Dict[str, ],
+         ss_predictor: Dict[str, nn.Module],
          t1,
          t2,
          optimizers,

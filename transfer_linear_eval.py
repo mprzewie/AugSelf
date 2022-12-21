@@ -122,7 +122,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--print-freq', type=int, default=10)
     parser.add_argument('--distributed', action='store_true')
-    parser.add_argument('--metric', type=str, default='top1')
+    parser.add_argument('--metric', type=str, default='top1', choices=["top1", 'class-avg'])
     args = parser.parse_args()
     args.backend = 'nccl' if args.distributed else None
     args.num_backbone_features = 512 if args.model.endswith('resnet18') else 2048

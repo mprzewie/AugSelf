@@ -18,55 +18,85 @@ import trainers_cond as trainers
 from trainers_cond import SSObjective
 from utils import Logger
 
+AUG_DESC_SIZE_CONFIG = {
+    "crop": 4,
+    "color": 4,
+    "flip": 1,
+    "blur": 1,
+    # "rot": 4,
+    # "sol": 1,
+    "grayscale": 1
+}
+"""
+('crop',  crop,  4, 'regression'),
+        ('color', color, 4, 'regression'),
+        ('flip',  flip,  1, 'binary_classification'),
+        ('blur',  blur,  1, 'regression'),
+        ('rot',    rot,  4, 'classification'),
+        ('sol',    sol,  1, 'regression'),"""
+
+class AUG_TREATMENT:
+    raw = "raw"
+    mlp = "mlp"
+    hn = "hn"
+
 def simsiam(args, t1, t2):
     out_dim = 2048
     device = idist.device()
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        rot   = args.ss_rot,
-        sol   = args.ss_sol,
-        only  = args.ss_only,
-    )
+    # ss_objective = SSObjective(
+    #     crop  = args.ss_crop,
+    #     color = args.ss_color,
+    #     flip  = args.ss_flip,
+    #     blur  = args.ss_blur,
+    #     rot   = args.ss_rot,
+    #     sol   = args.ss_sol,
+    #     only  = args.ss_only,
+    # )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
-    projector    = build_model(load_mlp(args.num_backbone_features,
-                                        out_dim,
-                                        out_dim,
-                                        num_layers=2+int(args.dataset.startswith('imagenet')),
-                                        last_bn=True))
+
+    num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
+
+    projector    = build_model(
+        load_mlp(
+            args.num_backbone_features + num_aug_features,
+            out_dim,
+            out_dim,
+            num_layers=2+int(args.dataset.startswith('imagenet')),
+            last_bn=True
+        )
+    )
     predictor    = build_model(load_mlp(out_dim,
                                         out_dim // 4,
                                         out_dim,
                                         num_layers=2,
                                         last_bn=False))
-    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
-    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
-    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+    # ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    # ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    # ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params),
+    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())), #+ss_params),
                   build_optim(list(predictor.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.simsiam(backbone=backbone,
                                projector=projector,
                                predictor=predictor,
-                               ss_predictor=ss_predictor,
+                               # ss_predictor=ss_predictor,
                                t1=t1, t2=t2,
                                optimizers=optimizers,
                                device=device,
-                               ss_objective=ss_objective)
+                               # ss_objective=ss_objective
+                               )
 
     return dict(backbone=backbone,
                 projector=projector,
                 predictor=predictor,
-                ss_predictor=ss_predictor,
+                # ss_predictor=ss_predictor,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -76,34 +106,19 @@ def moco(args, t1, t2):
     out_dim = 128
     device = idist.device()
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        only  = args.ss_only,
-    )
+    # ss_objective = SSObjective(
+    #     crop  = args.ss_crop,
+    #     color = args.ss_color,
+    #     flip  = args.ss_flip,
+    #     blur  = args.ss_blur,
+    #     only  = args.ss_only,
+    # )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
-    """
-    ('crop',  crop,  4, 'regression'),
-            ('color', color, 4, 'regression'),
-            ('flip',  flip,  1, 'binary_classification'),
-            ('blur',  blur,  1, 'regression'),
-            ('rot',    rot,  4, 'classification'),
-            ('sol',    sol,  1, 'regression'),"""
-    aug_desc_size_config = {
-        "crop": 4,
-        "color": 4,
-        "flip": 1,
-        "blur": 1,
-        # "rot": 4,
-        # "sol": 1,
-        "grayscale": 1
-    }
 
-    num_aug_features = sum(aug_desc_size_config.values())
+
+    num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
 
     projector    = build_model(
         load_mlp(
@@ -114,27 +129,28 @@ def moco(args, t1, t2):
             last_bn=False
         )
     )
-    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
-    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
-    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+    # ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    # ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    # ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params)]
+    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.moco(
             backbone=backbone,
             projector=projector,
-            ss_predictor=ss_predictor,
+            # ss_predictor=ss_predictor,
             t1=t1, t2=t2,
             optimizers=optimizers,
             device=device,
-            ss_objective=ss_objective)
+            # ss_objective=ss_objective
+    )
 
     return dict(backbone=backbone,
                 projector=projector,
-                ss_predictor=ss_predictor,
+                # ss_predictor=ss_predictor,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -143,13 +159,13 @@ def simclr(args, t1, t2):
     out_dim = 128
     device = idist.device()
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        only  = args.ss_only,
-    )
+    # ss_objective = SSObjective(
+    #     crop  = args.ss_crop,
+    #     color = args.ss_color,
+    #     flip  = args.ss_flip,
+    #     blur  = args.ss_blur,
+    #     only  = args.ss_only,
+    # )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
@@ -188,14 +204,14 @@ def byol(args, t1, t2):
     h_dim = 4096
     device = idist.device()
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        rot   = args.ss_rot,
-        only  = args.ss_only,
-    )
+    # ss_objective = SSObjective(
+    #     crop  = args.ss_crop,
+    #     color = args.ss_color,
+    #     flip  = args.ss_flip,
+    #     blur  = args.ss_blur,
+    #     rot   = args.ss_rot,
+    #     only  = args.ss_only,
+    # )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
@@ -241,14 +257,14 @@ def swav(args, t1, t2):
     h_dim = 2048
     device = idist.device()
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        rot   = args.ss_rot,
-        only  = args.ss_only,
-    )
+    # ss_objective = SSObjective(
+    #     crop  = args.ss_crop,
+    #     color = args.ss_color,
+    #     flip  = args.ss_flip,
+    #     blur  = args.ss_blur,
+    #     rot   = args.ss_rot,
+    #     only  = args.ss_only,
+    # )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
@@ -291,9 +307,11 @@ def main(local_rank, args):
     logger = Logger(args.logdir, args.resume)
 
     # DATASETS
+    logger.log_msg(f"Loading {args.dataset}")
     datasets = load_pretrain_datasets(dataset=args.dataset,
                                       datadir=args.datadir,
                                       color_aug=args.color_aug)
+
     build_dataloader = partial(idist.auto_dataloader,
                                batch_size=args.batch_size,
                                num_workers=args.num_workers,
@@ -305,7 +323,12 @@ def main(local_rank, args):
 
     t1, t2 = datasets['t1'], datasets['t2']
 
+
     # MODELS
+
+    logger.log_msg(f"Building {args.framework}")
+
+
     if args.framework == 'simsiam':
         models = simsiam(args, t1, t2)
     elif args.framework == 'moco':
@@ -421,13 +444,22 @@ if __name__ == '__main__':
 
     parser.add_argument('--color-aug', type=str, default='default')
 
-    parser.add_argument('--ss-crop',  type=float, default=-1)
-    parser.add_argument('--ss-color', type=float, default=-1)
-    parser.add_argument('--ss-flip',  type=float, default=-1)
-    parser.add_argument('--ss-blur',  type=float, default=-1)
-    parser.add_argument('--ss-rot',   type=float, default=-1)
-    parser.add_argument('--ss-sol',   type=float, default=-1)
-    parser.add_argument('--ss-only',  action='store_true')
+    parser.add_argument(
+        '--aug-treatment', type=str, default=AUG_TREATMENT.raw,
+        choices=[AUG_TREATMENT.raw, AUG_TREATMENT.mlp, AUG_TREATMENT.hn]
+    )
+    parser.add_argument(
+        "--aug-nn-width", type=int, default=32,
+        help="Hidden size of aug processing network / aug hypernetwork, depending on aug-treatment"
+    )
+
+    # parser.add_argument('--ss-crop',  type=float, default=-1)
+    # parser.add_argument('--ss-color', type=float, default=-1)
+    # parser.add_argument('--ss-flip',  type=float, default=-1)
+    # parser.add_argument('--ss-blur',  type=float, default=-1)
+    # parser.add_argument('--ss-rot',   type=float, default=-1)
+    # parser.add_argument('--ss-sol',   type=float, default=-1)
+    # parser.add_argument('--ss-only',  action='store_true')
 
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256

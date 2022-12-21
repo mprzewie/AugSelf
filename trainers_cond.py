@@ -64,12 +64,12 @@ def prepare_training_batch(batch, t1, t2, device):
 def simsiam(backbone,
             projector,
             predictor,
-            ss_predictor,
+            # ss_predictor,
             t1,
             t2,
             optimizers,
             device,
-            ss_objective
+            # ss_objective
             ):
 
     def training_step(engine, batch):
@@ -83,9 +83,15 @@ def simsiam(backbone,
         x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
         y1, y2 = backbone(x1), backbone(x2)
 
-        if not ss_objective.only:
-            z1 = projector(y1)
-            z2 = projector(y2)
+        aug_keys = sorted(d1.keys())
+        d1_cat = torch.concat([d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.concat([d2[k] for k in aug_keys], dim=1)
+        y_d_1 = torch.concat([y1, d1_cat], dim=1)
+        y_d_2 = torch.concat([y2, d2_cat], dim=1)
+
+        if True: #not ss_objective.only:
+            z1 = projector(y_d_1)
+            z2 = projector(y_d_2)
             p1 = predictor(z1)
             p2 = predictor(z2)
             loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
@@ -95,14 +101,16 @@ def simsiam(backbone,
             loss = 0.
 
         outputs = dict(loss=loss)
-        if not ss_objective.only:
+        if True: # not ss_objective.only:
             outputs['z1'] = z1
             outputs['z2'] = z2
 
-        ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
-        (loss+ss_losses['total']).backward()
-        for k, v in ss_losses.items():
-            outputs[f'ss/{k}'] = v
+        # ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
+        # (loss+ss_losses['total']).backward()
+        loss.backward()
+
+        # for k, v in ss_losses.items():
+        #     outputs[f'ss/{k}'] = v
 
         for o in optimizers:
             o.step()
@@ -114,12 +122,12 @@ def simsiam(backbone,
 
 def moco(backbone,
          projector,
-         ss_predictor: Dict[str, nn.Module],
+         # ss_predictor: Dict[str, nn.Module],
          t1,
          t2,
          optimizers,
          device,
-         ss_objective: SSObjective,
+         # ss_objective: SSObjective,
          momentum=0.999,
          K=65536,
          T=0.2,
