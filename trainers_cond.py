@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from ignite.engine import Engine
 import ignite.distributed as idist
 
+from cond_utils import AugProjector
 from transforms import extract_aug_descriptors
 
 
@@ -121,7 +122,7 @@ def simsiam(backbone,
 
 
 def moco(backbone,
-         projector,
+         projector: AugProjector,
          # ss_predictor: Dict[str, nn.Module],
          t1,
          t2,
@@ -164,14 +165,14 @@ def moco(backbone,
         # assert False, [d1_cat.shape, d2_cat.shape]
         # assert False, [{k: v.shape for (k,v) in d.items()} for d in [d1, d2]]
         y1 = backbone(x1)
-        y_d_1 = torch.concat([y1, d1_cat], dim=1)
+        # y_d_1 = torch.concat([y1, d1_cat], dim=1)
         z1 = F.normalize(
-            projector(y_d_1)
+            projector(y1, d1_cat)
         )
         with torch.no_grad():
             y2 = target_backbone(x2)
-            y_d_2 = torch.concat([y2, d2_cat],  dim=1)
-            z2 = F.normalize(target_projector(y_d_2))
+            # y_d_2 = torch.concat([y2, d2_cat],  dim=1)
+            z2 = F.normalize(target_projector(y2, d2_cat))
 
 
         l_pos = torch.einsum('nc,nc->n', [z1, z2]).unsqueeze(-1)

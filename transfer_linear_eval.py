@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from functools import partial
 from copy import deepcopy
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -9,11 +10,12 @@ import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
 import ignite.distributed as idist
+import wandb
 
 from datasets import load_datasets
 from models import load_backbone
 from trainers import collect_features
-from utils import Logger
+from utils import Logger, get_engine_mock
 
 
 def build_step(X, Y, classifier, optimizer, w):
@@ -48,7 +50,11 @@ def compute_accuracy(X, Y, classifier, metric):
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
-    logger = Logger(None)
+
+    logdir = Path(args.ckpt).parent
+
+    logger = Logger(logdir=logdir, resume=True)
+    engine_mock = get_engine_mock(ckpt_path=args.ckpt)
 
     # DATASETS
     datasets = load_datasets(dataset=args.dataset,
@@ -101,6 +107,12 @@ def main(local_rank, args):
             best_classifier = deepcopy(classifier)
 
         logger.log_msg(f'w={w:.4e}, acc={acc:.4f}')
+        if wandb.run is not None:
+            wandb.log({
+                "w": w,
+                f"val_linear/{args.dataset}": acc
+            })
+
 
     logger.log_msg(f'BEST: w={best_w:.4e}, acc={best_acc:.4f}')
 
@@ -110,6 +122,12 @@ def main(local_rank, args):
     optimizer.step(build_step(X, Y, best_classifier, optimizer, best_w))
     acc = compute_accuracy(X_test, Y_test, best_classifier, args.metric)
     logger.log_msg(f'test acc={acc:.4f}')
+    logger.log(
+        engine=engine_mock, global_step=-1,
+        **{
+            f"test_linear/{args.dataset}": acc
+        }
+    )
 
 if __name__ == '__main__':
     parser = ArgumentParser()

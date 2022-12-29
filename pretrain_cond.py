@@ -1,6 +1,9 @@
+import json
 import os
+import sys
 from argparse import ArgumentParser
 from functools import partial
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -8,25 +11,15 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-import ignite
 from ignite.engine import Events
 import ignite.distributed as idist
 
+from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_TREATMENT, AugProjector
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
-from trainers_cond import SSObjective
 from utils import Logger
 
-AUG_DESC_SIZE_CONFIG = {
-    "crop": 4,
-    "color": 4,
-    "flip": 1,
-    "blur": 1,
-    # "rot": 4,
-    # "sol": 1,
-    "grayscale": 1
-}
 """
 ('crop',  crop,  4, 'regression'),
         ('color', color, 4, 'regression'),
@@ -35,10 +28,6 @@ AUG_DESC_SIZE_CONFIG = {
         ('rot',    rot,  4, 'classification'),
         ('sol',    sol,  1, 'regression'),"""
 
-class AUG_TREATMENT:
-    raw = "raw"
-    mlp = "mlp"
-    hn = "hn"
 
 def simsiam(args, t1, t2):
     out_dim = 2048
@@ -102,6 +91,7 @@ def simsiam(args, t1, t2):
                 trainer=trainer)
 
 
+
 def moco(args, t1, t2):
     out_dim = 128
     device = idist.device()
@@ -118,15 +108,11 @@ def moco(args, t1, t2):
     backbone     = build_model(load_backbone(args))
 
 
-    num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
-
-    projector    = build_model(
-        load_mlp(
-            args.num_backbone_features + num_aug_features,
-            args.num_backbone_features,
-            out_dim,
-            num_layers=2,
-            last_bn=False
+    projector = build_model(
+        AugProjector(
+            args,
+            proj_out_dim=out_dim,
+            proj_depth=2,
         )
     )
     # ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
@@ -304,7 +290,20 @@ def swav(args, t1, t2):
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
-    logger = Logger(args.logdir, args.resume)
+    logger = Logger(args.logdir, args.resume, args=args)
+
+    with (Path(args.logdir) / "rerun.sh").open("w") as f:
+        print("python", " ".join(sys.argv), file=f)
+
+    with (Path(args.logdir) / "args.json").open("w") as f:
+        json.dump(
+            {
+                k: v if isinstance(v, (int, str, bool, float)) else str(v)
+                for (k, v) in vars(args).items()
+            },
+            f,
+            indent=2,
+        )
 
     # DATASETS
     logger.log_msg(f"Loading {args.dataset}")
@@ -452,6 +451,10 @@ if __name__ == '__main__':
         "--aug-nn-width", type=int, default=32,
         help="Hidden size of aug processing network / aug hypernetwork, depending on aug-treatment"
     )
+    parser.add_argument(
+        "--aug-nn-depth", type=int, default=2,
+        help="Depth of aug processing network / aug hypernetwork, depending on aug-treatment"
+    )
 
     # parser.add_argument('--ss-crop',  type=float, default=-1)
     # parser.add_argument('--ss-color', type=float, default=-1)
@@ -463,6 +466,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256
+
+
+
     if not args.distributed:
         with idist.Parallel() as parallel:
             parallel.run(main, args)
