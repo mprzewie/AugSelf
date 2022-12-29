@@ -154,6 +154,43 @@ def moco(backbone,
 
         x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
 
+        ##############
+        # import matplotlib.pyplot as plt
+        # from torchvision.transforms.functional import pil_to_tensor, to_pil_image
+        # fig, ax = plt.subplots(nrows=6, ncols=4, figsize=(8, 12))
+        # [[a_.axis("off") for a_ in a] for a in ax]
+        # ((xo1, w1), (xo2, w2)), _ = batch
+        #
+        # for i in range(6):
+        #     x1_, x2_ = x1[i], x2[i]
+        #     d1_ = {k: [f"{f:.2f}" for f in v[i].cpu().detach().numpy().tolist()] for (k, v) in d1.items()}
+        #     d2_ = {k: [f"{f:.2f}" for f in v[i].cpu().detach().numpy().tolist()] for (k, v) in d2.items()}
+        #
+        #     print("------", i, "-------------")
+        #     print(d1_)
+        #     print(d2_)
+        #
+        #     x1_ = x1_ + x1_.min()
+        #     x1_ = x1_ / x1_.max()
+        #
+        #     x2_ = x2_ + x2_.min()
+        #     x2_ = x2_ / x2_.max()
+        #
+        #
+        #     ax[i][0].imshow(to_pil_image(x1_))
+        #     ax[i][0].set_title(f"{d1_}")
+        #
+        #     ax[i][1].imshow(to_pil_image(x2_))
+        #     ax[i][1].set_title(f"{d2_}")
+        #     ax[i][2].imshow(to_pil_image(xo1[i]))
+        #     ax[i][3].imshow(to_pil_image(xo2[i]))
+        #
+        # plt.savefig("batch.png")
+        # assert False
+        #
+        #
+        #############
+
         aug_keys = sorted(d1.keys())
 
         # print(aug_keys)
