@@ -14,7 +14,7 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
-from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_TREATMENT, AugProjector
+from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
@@ -444,8 +444,8 @@ if __name__ == '__main__':
     parser.add_argument('--color-aug', type=str, default='default')
 
     parser.add_argument(
-        '--aug-treatment', type=str, default=AUG_TREATMENT.raw,
-        choices=[AUG_TREATMENT.raw, AUG_TREATMENT.mlp, AUG_TREATMENT.hn]
+        '--aug-treatment', type=str, default=AUG_STRATEGY.raw,
+        choices=[AUG_STRATEGY.raw, AUG_STRATEGY.mlp, AUG_STRATEGY.hn]
     )
     parser.add_argument(
         "--aug-nn-width", type=int, default=32,

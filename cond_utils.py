@@ -14,7 +14,7 @@ AUG_DESC_SIZE_CONFIG = {
 }
 
 
-class AUG_TREATMENT:
+class AUG_STRATEGY:
     raw = "raw"
     mlp = "mlp"
     hn = "hn"
@@ -30,12 +30,12 @@ class AugProjector(nn.Module):
         self.aug_nn_width = args.aug_nn_width
 
 
-        if self.aug_treatment == AUG_TREATMENT.raw:
+        if self.aug_treatment == AUG_STRATEGY.raw:
             self.num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
 
             self.aug_processor = nn.Identity()
 
-        elif self.aug_treatment == AUG_TREATMENT.mlp:
+        elif self.aug_treatment == AUG_STRATEGY.mlp:
             self.num_aug_features = self.aug_nn_width
 
             self.aug_processor = load_mlp(
@@ -46,12 +46,12 @@ class AugProjector(nn.Module):
             )
             print(self.aug_processor)
 
-        elif self.aug_treatment == AUG_TREATMENT.hn:
+        elif self.aug_treatment == AUG_STRATEGY.hn:
             raise NotImplementedError("Hypernetworks: TODO")
             self.num_aug_features = 0
 
 
-        if self.aug_treatment in [AUG_TREATMENT.raw, AUG_TREATMENT.mlp]:
+        if self.aug_treatment in [AUG_STRATEGY.raw, AUG_STRATEGY.mlp]:
 
             self.projector = load_mlp(
                 args.num_backbone_features + self.num_aug_features,
@@ -63,11 +63,11 @@ class AugProjector(nn.Module):
 
     def forward(self, x: torch.Tensor, aug_desc: torch.Tensor):
 
-        if self.aug_treatment in [AUG_TREATMENT.mlp, AUG_TREATMENT.raw]:
+        if self.aug_treatment in [AUG_STRATEGY.mlp, AUG_STRATEGY.raw]:
             aug_desc = self.aug_processor(aug_desc)
             concat = torch.concat([x, aug_desc], dim=1)
             return self.projector(concat)
 
 
-        elif self.aug_treatment == AUG_TREATMENT.hn:
+        elif self.aug_treatment == AUG_STRATEGY.hn:
             ...
