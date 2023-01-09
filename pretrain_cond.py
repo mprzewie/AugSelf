@@ -14,7 +14,7 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
-from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_TREATMENT, AugProjector
+from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_TREATMENT, AugProjector, AUG_HN_TYPES
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
@@ -454,6 +454,12 @@ if __name__ == '__main__':
     parser.add_argument(
         "--aug-nn-depth", type=int, default=2,
         help="Depth of aug processing network / aug hypernetwork, depending on aug-treatment"
+    )
+
+    parser.add_argument(
+        "--aug-hn-type", type=str, default=AUG_HN_TYPES.mlp,
+        choices=[AUG_HN_TYPES.mlp, AUG_HN_TYPES.mlp_bn],
+        help="Type of aug hypernetwork. Used only if aug-treatment==hn"
     )
 
     # parser.add_argument('--ss-crop',  type=float, default=-1)

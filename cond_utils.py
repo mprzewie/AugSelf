@@ -19,6 +19,10 @@ class AUG_TREATMENT:
     mlp = "mlp"
     hn = "hn"
 
+class AUG_HN_TYPES:
+    mlp = "mlp"
+    mlp_bn = "mlp_bn"
+
 
 class AugProjector(nn.Module):
     def __init__(
@@ -26,6 +30,7 @@ class AugProjector(nn.Module):
     ):
         super().__init__()
         self.aug_treatment = args.aug_treatment
+        self.aug_hn_type = args.aug_hn_type
         self.aug_nn_depth = args.aug_nn_depth
         self.aug_nn_width = args.aug_nn_width
 
@@ -92,6 +97,15 @@ class AugProjector(nn.Module):
             from pprint import pprint
             pprint(self.layers_config)
 
+            if self.aug_hn_type == AUG_HN_TYPES.mlp_bn:
+                self.projector_bns = nn.ModuleList([
+                    nn.BatchNorm1d(l_cfg["n_out"])
+                    for l_cfg in self.layers_config[:-1]
+                ])
+                print("Projector Batchnorms")
+                print(self.projector_bns)
+
+
         if self.aug_treatment in [AUG_TREATMENT.raw, AUG_TREATMENT.mlp]:
             self.projector = load_mlp(
                 args.num_backbone_features + self.num_aug_features,
@@ -130,6 +144,11 @@ class AugProjector(nn.Module):
                 # TODO - batchnorm?
 
                 if l != (len(self.layers_config) - 1):
+
+                    if self.aug_hn_type == AUG_HN_TYPES.mlp_bn:
+                        b_s, _, x_p_s = x_proc.shape
+                        x_proc = self.projector_bns[l](x_proc.reshape(b_s, x_p_s)).reshape(b_s, 1, x_p_s)
+
                     x_proc = torch.relu(x_proc)
 
             # print(f"{x_proc.shape=}")
