@@ -456,6 +456,12 @@ if __name__ == '__main__':
         help="Depth of aug processing network / aug hypernetwork, depending on aug-treatment"
     )
 
+    parser.add_argument(
+        "--aug-hn-type", type=str, default=AUG_HN_TYPES.mlp,
+        choices=[AUG_HN_TYPES.mlp, AUG_HN_TYPES.mlp_bn],
+        help="Type of aug hypernetwork. Used only if aug-treatment==hn"
+    )
+
     # parser.add_argument('--ss-crop',  type=float, default=-1)
     # parser.add_argument('--ss-color', type=float, default=-1)
     # parser.add_argument('--ss-flip',  type=float, default=-1)
