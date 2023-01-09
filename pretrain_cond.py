@@ -14,7 +14,7 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
-from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector
+from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
