@@ -33,10 +33,15 @@ class AugProjector(nn.Module):
         self.aug_hn_type = args.aug_hn_type
         self.aug_nn_depth = args.aug_nn_depth
         self.aug_nn_width = args.aug_nn_width
+        self.aug_cond = args.aug_cond or []
+        self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
+
+        print("Projector aug strategy:", self.aug_treatment)
+        print("Conditioning projector on augmentations:", self.aug_subset_sizes)
 
 
         if self.aug_treatment == AUG_STRATEGY.raw:
-            self.num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
+            self.num_aug_features = sum(self.aug_subset_sizes.values())
 
             self.aug_processor = nn.Identity()
 
@@ -44,7 +49,7 @@ class AugProjector(nn.Module):
             self.num_aug_features = self.aug_nn_width
 
             self.aug_processor = load_mlp(
-                n_in=sum(AUG_DESC_SIZE_CONFIG.values()),
+                n_in=sum(self.aug_subset_sizes.values()),
                 n_hidden=self.aug_nn_width,
                 n_out=self.aug_nn_width,
                 num_layers=self.aug_nn_depth
@@ -89,7 +94,7 @@ class AugProjector(nn.Module):
                 layer_in_size = layer_out_size
 
             self.projector_hn = load_mlp(
-                n_in=sum(AUG_DESC_SIZE_CONFIG.values()),
+                n_in=sum(self.aug_subset_sizes.values()),
                 n_hidden=self.aug_nn_width,
                 n_out=num_weights_to_generate,
                 num_layers=self.aug_nn_depth

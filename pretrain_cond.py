@@ -18,6 +18,7 @@ from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
+from trainers import SSObjective
 from utils import Logger
 
 """
@@ -96,13 +97,13 @@ def moco(args, t1, t2):
     out_dim = 128
     device = idist.device()
 
-    # ss_objective = SSObjective(
-    #     crop  = args.ss_crop,
-    #     color = args.ss_color,
-    #     flip  = args.ss_flip,
-    #     blur  = args.ss_blur,
-    #     only  = args.ss_only,
-    # )
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        only  = args.ss_only,
+    )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
@@ -115,28 +116,28 @@ def moco(args, t1, t2):
             proj_depth=2,
         )
     )
-    # ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
-    # ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
-    # ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters()))]
+    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters()) + ss_params)]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.moco(
             backbone=backbone,
             projector=projector,
-            # ss_predictor=ss_predictor,
+            ss_predictor=ss_predictor,
             t1=t1, t2=t2,
             optimizers=optimizers,
             device=device,
-            # ss_objective=ss_objective
+            ss_objective=ss_objective
     )
 
     return dict(backbone=backbone,
                 projector=projector,
-                # ss_predictor=ss_predictor,
+                ss_predictor=ss_predictor,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -328,6 +329,8 @@ def main(local_rank, args):
     logger.log_msg(f"Building {args.framework}")
 
 
+    assert args.framework == "moco" # TODO
+
     if args.framework == 'simsiam':
         models = simsiam(args, t1, t2)
     elif args.framework == 'moco':
@@ -444,7 +447,8 @@ if __name__ == '__main__':
     parser.add_argument('--color-aug', type=str, default='default')
 
     parser.add_argument(
-        '--aug-treatment', type=str, default=AUG_STRATEGY.raw,
+        '--aug-treatment', # TODO: aug-strategy
+        type=str, default=AUG_STRATEGY.raw,
         choices=[AUG_STRATEGY.raw, AUG_STRATEGY.mlp, AUG_STRATEGY.hn]
     )
     parser.add_argument(
@@ -462,13 +466,18 @@ if __name__ == '__main__':
         help="Type of aug hypernetwork. Used only if aug-treatment==hn"
     )
 
-    # parser.add_argument('--ss-crop',  type=float, default=-1)
-    # parser.add_argument('--ss-color', type=float, default=-1)
-    # parser.add_argument('--ss-flip',  type=float, default=-1)
-    # parser.add_argument('--ss-blur',  type=float, default=-1)
-    # parser.add_argument('--ss-rot',   type=float, default=-1)
-    # parser.add_argument('--ss-sol',   type=float, default=-1)
-    # parser.add_argument('--ss-only',  action='store_true')
+    parser.add_argument(
+        "--aug-cond", nargs="*", type=str, choices=list(AUG_DESC_SIZE_CONFIG.keys()),
+        help="Augmentations to condition the projector on"
+    )
+
+    parser.add_argument('--ss-crop',  type=float, default=-1)
+    parser.add_argument('--ss-color', type=float, default=-1)
+    parser.add_argument('--ss-flip',  type=float, default=-1)
+    parser.add_argument('--ss-blur',  type=float, default=-1)
+    parser.add_argument('--ss-rot',   type=float, default=-1)
+    parser.add_argument('--ss-sol',   type=float, default=-1)
+    parser.add_argument('--ss-only',  action='store_true')
 
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256

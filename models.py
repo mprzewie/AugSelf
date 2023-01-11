@@ -1,4 +1,5 @@
 import math
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -46,7 +47,7 @@ def load_mlp(n_in, n_hidden, n_out, num_layers=3, last_bn=True) -> nn.Module:
     return mlp
 
 
-def load_ss_predictor(n_in, ss_objective, n_hidden=512):
+def load_ss_predictor(n_in, ss_objective, n_hidden=512) -> Dict[str, nn.Module]:
     ss_predictor = {}
     for name, weight, n_out, _ in ss_objective.params:
         if weight > 0:
