@@ -14,7 +14,7 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
-from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES
+from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
@@ -132,7 +132,8 @@ def moco(args, t1, t2):
             t1=t1, t2=t2,
             optimizers=optimizers,
             device=device,
-            ss_objective=ss_objective
+            ss_objective=ss_objective,
+            aug_desc_type=args.aug_desc_type
     )
 
     return dict(backbone=backbone,
@@ -469,6 +470,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "--aug-cond", nargs="*", type=str, choices=list(AUG_DESC_SIZE_CONFIG.keys()),
         help="Augmentations to condition the projector on"
+    )
+
+    parser.add_argument(
+        "--aug-desc-type", type=str, choices=[AUG_DESC_TYPES.absolute, AUG_DESC_TYPES.relative],
+        default=AUG_DESC_TYPES.absolute,
+        help=f"Whether to condition on absolute augmentation descriptors ({AUG_DESC_TYPES.absolute}) "
+             f"or differences between them ({AUG_DESC_TYPES.relative})"
     )
 
     parser.add_argument('--ss-crop',  type=float, default=-1)

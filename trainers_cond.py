@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from ignite.engine import Engine
 import ignite.distributed as idist
 
-from cond_utils import AugProjector
+from cond_utils import AugProjector, AUG_DESC_TYPES
 from trainers import SSObjective
 from transforms import extract_aug_descriptors, extract_diff
 
@@ -98,6 +98,7 @@ def moco(backbone,
          optimizers,
          device,
          ss_objective: SSObjective,
+         aug_desc_type: str,
          momentum=0.999,
          K: int = 65536,
          T: float = 0.2,
@@ -121,6 +122,10 @@ def moco(backbone,
             o.zero_grad()
 
         (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
+
+        if aug_desc_type == AUG_DESC_TYPES.relative:
+            aug_d1 = diff1
+            aug_d2 = diff2
 
         aug_keys = sorted(projector.aug_cond)
 

@@ -19,9 +19,15 @@ class AUG_STRATEGY:
     mlp = "mlp"
     hn = "hn"
 
+
 class AUG_HN_TYPES:
     mlp = "mlp"
     mlp_bn = "mlp_bn"
+
+
+class AUG_DESC_TYPES:
+    absolute = "abs"
+    relative = "rel"
 
 
 class AugProjector(nn.Module):
@@ -38,7 +44,6 @@ class AugProjector(nn.Module):
 
         print("Projector aug strategy:", self.aug_treatment)
         print("Conditioning projector on augmentations:", self.aug_subset_sizes)
-
 
         if self.aug_treatment == AUG_STRATEGY.raw:
             self.num_aug_features = sum(self.aug_subset_sizes.values())
@@ -111,9 +116,7 @@ class AugProjector(nn.Module):
                 print("Projector Batchnorms")
                 print(self.projector_bns)
 
-
         if self.aug_treatment in [AUG_STRATEGY.raw, AUG_STRATEGY.mlp]:
-
             self.projector = load_mlp(
                 args.num_backbone_features + self.num_aug_features,
                 args.num_backbone_features,
