@@ -131,8 +131,14 @@ class AugProjector(nn.Module):
                 print(self.projector_bns)
 
         if self.aug_treatment in [AUG_STRATEGY.raw, AUG_STRATEGY.mlp]:
+
+            projector_in = (
+                args.num_backbone_features + self.num_aug_features
+                if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat
+                else args.num_backbone_features
+            )
             self.projector = load_mlp(
-                args.num_backbone_features + self.num_aug_features,
+                projector_in,
                 args.num_backbone_features,
                 proj_out_dim,
                 num_layers=proj_depth,
@@ -144,6 +150,7 @@ class AugProjector(nn.Module):
         if self.aug_treatment in [AUG_STRATEGY.mlp, AUG_STRATEGY.raw]:
             aug_desc = self.aug_processor(aug_desc)
 
+            # print(f"pre {x.shape=}, {aug_desc.shape=}")
             if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat:
                 x = torch.concat([x, aug_desc], dim=1)
 
@@ -158,6 +165,7 @@ class AugProjector(nn.Module):
             else:
                 raise NotImplementedError(self.aug_inj_type)
 
+            # print(f"post {x.shape=}")
             return self.projector(x)
 
 
