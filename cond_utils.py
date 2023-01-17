@@ -16,13 +16,20 @@ AUG_DESC_SIZE_CONFIG = {
 
 class AUG_STRATEGY:
     raw = "raw"
-    mlp = "mlp"
+    mlp = "mlp" # TODO -> mlp_proj_cat
     hn = "hn"
 
 
 class AUG_HN_TYPES:
     mlp = "mlp"
-    mlp_bn = "mlp_bn"
+    mlp_bn = "mlp-bn"
+
+
+class AUG_INJECTION_TYPES:
+    proj_cat = "proj-cat" # concatenate raw/mlp_outputs before projector
+    proj_mul = "proj-mul" # add proj input to mlp output
+    proj_add = "proj-add" # multiply proj input by mlp output
+    img_cat = "img-cat" # concatenate raw/mlp_outputs to image channels
 
 
 class AUG_DESC_TYPES:
@@ -41,6 +48,7 @@ class AugProjector(nn.Module):
         self.aug_nn_width = args.aug_nn_width
         self.aug_cond = args.aug_cond or []
         self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
+        self.aug_inj_type = args.aug_inj_type
 
         print("Projector aug strategy:", self.aug_treatment)
         print("Conditioning projector on augmentations:", self.aug_subset_sizes)
@@ -53,10 +61,16 @@ class AugProjector(nn.Module):
         elif self.aug_treatment == AUG_STRATEGY.mlp:
             self.num_aug_features = self.aug_nn_width
 
+            aug_processor_out = (
+                self.aug_nn_width
+                if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat
+                else args.num_backbone_features
+            )
+
             self.aug_processor = load_mlp(
                 n_in=sum(self.aug_subset_sizes.values()),
                 n_hidden=self.aug_nn_width,
-                n_out=self.aug_nn_width,
+                n_out=aug_processor_out,
                 num_layers=self.aug_nn_depth
             )
             print(self.aug_processor)
@@ -129,8 +143,22 @@ class AugProjector(nn.Module):
 
         if self.aug_treatment in [AUG_STRATEGY.mlp, AUG_STRATEGY.raw]:
             aug_desc = self.aug_processor(aug_desc)
-            concat = torch.concat([x, aug_desc], dim=1)
-            return self.projector(concat)
+
+            if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat:
+                x = torch.concat([x, aug_desc], dim=1)
+
+            elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_add:
+                assert aug_desc.shape == x.shape, (x.shape, aug_desc.shape)
+                x = x + aug_desc
+
+            elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_mul:
+                assert aug_desc.shape == x.shape, (x.shape, aug_desc.shape)
+                x = x * aug_desc
+
+            else:
+                raise NotImplementedError(self.aug_inj_type)
+
+            return self.projector(x)
 
 
         elif self.aug_treatment == AUG_STRATEGY.hn:

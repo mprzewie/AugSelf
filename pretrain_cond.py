@@ -14,7 +14,8 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
-from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES
+from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES, \
+    AUG_INJECTION_TYPES
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
@@ -96,6 +97,8 @@ def simsiam(args, t1, t2):
 def moco(args, t1, t2):
     out_dim = 128
     device = idist.device()
+
+    assert args.aug_inj_type != AUG_INJECTION_TYPES.img_cat, "Not implemented yet"
 
     ss_objective = SSObjective(
         crop  = args.ss_crop,
@@ -465,6 +468,12 @@ if __name__ == '__main__':
         "--aug-hn-type", type=str, default=AUG_HN_TYPES.mlp,
         choices=[AUG_HN_TYPES.mlp, AUG_HN_TYPES.mlp_bn],
         help="Type of aug hypernetwork. Used only if aug-treatment==hn"
+    )
+
+    parser.add_argument(
+        "--aug-inj-type", type=str, default=AUG_INJECTION_TYPES.proj_cat,
+        choices=[AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_add, AUG_INJECTION_TYPES.proj_mul, AUG_INJECTION_TYPES.img_cat],
+        help="How to inject raw or mlp-processed aug vectors. Used only if aug-treatment==mlp and in some cases for raw."
     )
 
     parser.add_argument(
