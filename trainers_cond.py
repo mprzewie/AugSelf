@@ -9,7 +9,8 @@ import torch.nn.functional as F
 from ignite.engine import Engine
 import ignite.distributed as idist
 
-from cond_utils import AugProjector, AUG_DESC_TYPES
+from cond_utils import AugProjector, AUG_DESC_TYPES, AUG_STRATEGY
+from models import load_mlp
 from trainers import SSObjective
 from transforms import extract_aug_descriptors, extract_diff
 
@@ -99,10 +100,12 @@ def moco(backbone,
          device,
          ss_objective: SSObjective,
          aug_desc_type: str,
+         aug_bkb_projector: nn.Module,
+         aug_contrastive_loss_lambda: float,
          momentum=0.999,
          K: int = 65536,
          T: float = 0.2,
-):
+         ):
     target_backbone = deepcopy(backbone)
     target_projector = deepcopy(projector)
     for p in list(target_backbone.parameters()) + list(target_projector.parameters()):
@@ -112,11 +115,20 @@ def moco(backbone,
     queue.requires_grad = False
     queue.ptr = 0
 
+    #############
+
+    aug_queue = F.normalize(torch.randn(K, projector.aug_processor_out).to(device)).detach()
+    aug_queue.requires_grad = False
+    aug_queue.ptr = 0
+
+    #############
+
     def training_step(engine, batch):
         backbone.train()
         projector.train()
         target_backbone.train()
         target_projector.train()
+
 
         for o in optimizers:
             o.zero_grad()
@@ -133,14 +145,16 @@ def moco(backbone,
         d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
 
         y1 = backbone(x1)
-        # y_d_1 = torch.concat([y1, d1_cat], dim=1)
         z1 = F.normalize(
             projector(y1, d1_cat)
         )
+
         with torch.no_grad():
             y2 = target_backbone(x2)
-            # y_d_2 = torch.concat([y2, d2_cat],  dim=1)
-            z2 = F.normalize(target_projector(y2, d2_cat))
+            z2 = F.normalize(
+                target_projector(y2, d2_cat)
+            )
+
 
         l_pos = torch.einsum('nc,nc->n', [z1, z2]).unsqueeze(-1)
         l_neg = torch.einsum('nc,kc->nk', [z1, queue.clone().detach()])
@@ -150,7 +164,21 @@ def moco(backbone,
         outputs = dict(loss=loss, z1=z1, z2=z2)
 
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
-        # loss.backward()
+
+        ############
+        if projector.aug_treatment == AUG_STRATEGY.mlp:
+            aug_bkb_projector.train()
+            bkb_aug = F.normalize(aug_bkb_projector(y1))
+            norm_aug = F.normalize(projector.aug_processor(d1_cat))
+            l_aug_pos = torch.einsum('nc,nc->n', [bkb_aug, norm_aug]).unsqueeze(-1)
+            l_aug_neg = torch.einsum('nc,kc->nk', [bkb_aug, aug_queue.detach()])
+            aug_logits = torch.cat([l_aug_pos, l_aug_neg], dim=1).div(T)
+            aug_labels = torch.zeros(aug_logits.shape[0], dtype=torch.long).to(device)
+            aug_loss = F.cross_entropy(aug_logits, aug_labels)
+            ss_losses["bkb_aug_contrastive"] = aug_loss
+            ss_losses["total"] += aug_loss * aug_contrastive_loss_lambda
+        ############
+
         (loss + ss_losses['total']).backward()
         for k, v in ss_losses.items():
             outputs[f'ss/{k}'] = v
@@ -165,8 +193,15 @@ def moco(backbone,
 
         # queue update
         keys = idist.utils.all_gather(z1)
+
         queue[queue.ptr:queue.ptr + keys.shape[0]] = keys
         queue.ptr = (queue.ptr + keys.shape[0]) % K
+
+        #############
+        aug_keys = idist.utils.all_gather(norm_aug)
+        aug_queue[aug_queue.ptr:aug_queue.ptr + aug_keys.shape[0]] = aug_keys
+        aug_queue.ptr = (aug_queue.ptr + aug_keys.shape[0]) % K
+        #############
 
         return outputs
 

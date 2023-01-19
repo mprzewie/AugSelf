@@ -42,6 +42,7 @@ class AugProjector(nn.Module):
             self, args, proj_out_dim: int, proj_depth: int = 2
     ):
         super().__init__()
+        self.num_backbone_features = args.num_backbone_features
         self.aug_treatment = args.aug_treatment
         self.aug_hn_type = args.aug_hn_type
         self.aug_nn_depth = args.aug_nn_depth
@@ -61,7 +62,7 @@ class AugProjector(nn.Module):
         elif self.aug_treatment == AUG_STRATEGY.mlp:
             self.num_aug_features = self.aug_nn_width
 
-            aug_processor_out = (
+            self.aug_processor_out = (
                 self.aug_nn_width
                 if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat
                 else args.num_backbone_features
@@ -70,10 +71,11 @@ class AugProjector(nn.Module):
             self.aug_processor = load_mlp(
                 n_in=sum(self.aug_subset_sizes.values()),
                 n_hidden=self.aug_nn_width,
-                n_out=aug_processor_out,
+                n_out=self.aug_processor_out,
                 num_layers=self.aug_nn_depth
             )
             print(self.aug_processor)
+
 
         elif self.aug_treatment == AUG_STRATEGY.hn:
             num_weights_to_generate = 0

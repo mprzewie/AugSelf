@@ -112,20 +112,40 @@ def moco(args, t1, t2):
     backbone     = build_model(load_backbone(args))
 
 
-    projector = build_model(
+    projector : AugProjector= build_model(
         AugProjector(
             args,
             proj_out_dim=out_dim,
             proj_depth=2,
         )
     )
+
+    if projector.aug_treatment == AUG_STRATEGY.mlp:
+        aug_bkb_projector = build_model(
+            load_mlp(
+                n_in=projector.num_backbone_features,
+                n_hidden=projector.aug_nn_width,
+                n_out=projector.aug_processor_out,
+                num_layers=projector.aug_nn_depth,
+            )
+        )
+    else:
+        aug_bkb_projector = nn.Identity()
+
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters()) + ss_params)]
+    optimizers = [
+        build_optim(
+            list(backbone.parameters())+
+            list(projector.parameters()) +
+            ss_params +
+            list(aug_bkb_projector.parameters())
+        )
+    ]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.moco(
@@ -136,7 +156,9 @@ def moco(args, t1, t2):
             optimizers=optimizers,
             device=device,
             ss_objective=ss_objective,
-            aug_desc_type=args.aug_desc_type
+            aug_desc_type=args.aug_desc_type,
+            aug_contrastive_loss_lambda=args.aug_cnt_lambda,
+            aug_bkb_projector=aug_bkb_projector,
     )
 
     return dict(backbone=backbone,
@@ -486,6 +508,11 @@ if __name__ == '__main__':
         default=AUG_DESC_TYPES.absolute,
         help=f"Whether to condition on absolute augmentation descriptors ({AUG_DESC_TYPES.absolute}) "
              f"or differences between them ({AUG_DESC_TYPES.relative})"
+    )
+
+    parser.add_argument(
+        "--aug-cnt-lambda", type=float, default=0,
+        help="Weight of backbone/augmentation contrastive loss"
     )
 
     parser.add_argument('--ss-crop',  type=float, default=-1)
