@@ -29,8 +29,12 @@ class AUG_INJECTION_TYPES:
     proj_cat = "proj-cat" # concatenate raw/mlp_outputs before projector
     proj_mul = "proj-mul" # add proj input to mlp output
     proj_add = "proj-add" # multiply proj input by mlp output
+    proj_none = "proj-none" # don't inject anything to projector
     img_cat = "img-cat" # concatenate raw/mlp_outputs to image channels
 
+class AUG_CNT_LOSS_TYPES:
+    absolute = "abs" # contrast f_n' with theta_n'
+    relative = "relative" # contrast (f_n', f_n'') with (theta_n' - theta_n'')
 
 class AUG_DESC_TYPES:
     absolute = "abs"
@@ -64,7 +68,7 @@ class AugProjector(nn.Module):
 
             self.aug_processor_out = (
                 self.aug_nn_width
-                if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat
+                if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_none]
                 else args.num_backbone_features
             )
 
@@ -163,6 +167,9 @@ class AugProjector(nn.Module):
             elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_mul:
                 assert aug_desc.shape == x.shape, (x.shape, aug_desc.shape)
                 x = x * aug_desc
+
+            elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_none:
+                x = x
 
             else:
                 raise NotImplementedError(self.aug_inj_type)

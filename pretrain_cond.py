@@ -123,7 +123,11 @@ def moco(args, t1, t2):
     if projector.aug_treatment == AUG_STRATEGY.mlp:
         aug_bkb_projector = build_model(
             load_mlp(
-                n_in=projector.num_backbone_features,
+                n_in=(
+                    projector.num_backbone_features
+                    if args.aug_desc_type == AUG_DESC_TYPES.absolute
+                    else 2 * projector.num_backbone_features
+                ),
                 n_hidden=projector.aug_nn_width,
                 n_out=projector.aug_processor_out,
                 num_layers=projector.aug_nn_depth,
@@ -494,7 +498,14 @@ if __name__ == '__main__':
 
     parser.add_argument(
         "--aug-inj-type", type=str, default=AUG_INJECTION_TYPES.proj_cat,
-        choices=[AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_add, AUG_INJECTION_TYPES.proj_mul, AUG_INJECTION_TYPES.img_cat],
+        choices=[
+            AUG_INJECTION_TYPES.proj_cat,
+            AUG_INJECTION_TYPES.proj_add,
+            AUG_INJECTION_TYPES.proj_mul,
+            AUG_INJECTION_TYPES.img_cat,
+            AUG_INJECTION_TYPES.proj_none,
+
+        ],
         help="How to inject raw or mlp-processed aug vectors. Used only if aug-treatment==mlp and in some cases for raw."
     )
 
@@ -514,6 +525,7 @@ if __name__ == '__main__':
         "--aug-cnt-lambda", type=float, default=0,
         help="Weight of backbone/augmentation contrastive loss"
     )
+
 
     parser.add_argument('--ss-crop',  type=float, default=-1)
     parser.add_argument('--ss-color', type=float, default=-1)

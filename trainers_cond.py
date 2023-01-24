@@ -117,9 +117,10 @@ def moco(backbone,
 
     #############
 
-    aug_queue = F.normalize(torch.randn(K, projector.aug_processor_out).to(device)).detach()
-    aug_queue.requires_grad = False
-    aug_queue.ptr = 0
+    if projector.aug_treatment == AUG_STRATEGY.mlp:
+        aug_queue = F.normalize(torch.randn(K, projector.aug_processor_out).to(device)).detach()
+        aug_queue.requires_grad = False
+        aug_queue.ptr = 0
 
     #############
 
@@ -169,6 +170,7 @@ def moco(backbone,
         if projector.aug_treatment == AUG_STRATEGY.mlp:
             aug_bkb_projector.train()
             bkb_aug = F.normalize(aug_bkb_projector(y1))
+            assert False, "this should have failed a line above"
             norm_aug = F.normalize(projector.aug_processor(d1_cat))
             l_aug_pos = torch.einsum('nc,nc->n', [bkb_aug, norm_aug]).unsqueeze(-1)
             l_aug_neg = torch.einsum('nc,kc->nk', [bkb_aug, aug_queue.detach()])
@@ -198,9 +200,10 @@ def moco(backbone,
         queue.ptr = (queue.ptr + keys.shape[0]) % K
 
         #############
-        aug_keys = idist.utils.all_gather(norm_aug)
-        aug_queue[aug_queue.ptr:aug_queue.ptr + aug_keys.shape[0]] = aug_keys
-        aug_queue.ptr = (aug_queue.ptr + aug_keys.shape[0]) % K
+        if projector.aug_treatment == AUG_STRATEGY.mlp:
+            aug_keys = idist.utils.all_gather(norm_aug.detach())
+            aug_queue[aug_queue.ptr:aug_queue.ptr + aug_keys.shape[0]] = aug_keys
+            aug_queue.ptr = (aug_queue.ptr + aug_keys.shape[0]) % K
         #############
 
         return outputs
