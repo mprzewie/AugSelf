@@ -108,7 +108,12 @@ def moco(backbone,
          ):
     target_backbone = deepcopy(backbone)
     target_projector = deepcopy(projector)
-    for p in list(target_backbone.parameters()) + list(target_projector.parameters()):
+    target_aug_bkb_projector = deepcopy(aug_bkb_projector)
+    for p in (
+            list(target_backbone.parameters()) +
+            list(target_projector.parameters()) +
+            list(aug_bkb_projector.parameters())
+    ):
         p.requires_grad = False
 
     queue = F.normalize(torch.randn(K, 128).to(device)).detach()
@@ -127,8 +132,11 @@ def moco(backbone,
     def training_step(engine, batch):
         backbone.train()
         projector.train()
+        aug_bkb_projector.train()
+
         target_backbone.train()
         target_projector.train()
+        target_aug_bkb_projector.train()
 
 
         for o in optimizers:
@@ -168,15 +176,31 @@ def moco(backbone,
 
         ############
         if projector.aug_treatment == AUG_STRATEGY.mlp:
-            aug_bkb_projector.train()
-            bkb_aug = F.normalize(aug_bkb_projector(y1))
-            assert False, "this should have failed a line above"
-            norm_aug = F.normalize(projector.aug_processor(d1_cat))
+
+            b1, b2 = (
+                (y1, y2)
+                if aug_desc_type == AUG_DESC_TYPES.absolute
+                else (
+                    torch.cat([y1, y2], 1), torch.cat([y2, y1], 1)
+                )
+            )
+
+            b1 = aug_bkb_projector(b1)
+            a1 = projector.aug_processor(d1_cat)
+
+            with torch.no_grad():
+                b2 = target_aug_bkb_projector(b2)
+                a2 = target_projector.aug_processor(d2_cat)
+
+            bkb_aug = F.normalize(torch.cat([b1, b2], 0))
+            norm_aug = F.normalize(torch.cat([a1, a2], 0))
+
             l_aug_pos = torch.einsum('nc,nc->n', [bkb_aug, norm_aug]).unsqueeze(-1)
             l_aug_neg = torch.einsum('nc,kc->nk', [bkb_aug, aug_queue.detach()])
             aug_logits = torch.cat([l_aug_pos, l_aug_neg], dim=1).div(T)
             aug_labels = torch.zeros(aug_logits.shape[0], dtype=torch.long).to(device)
             aug_loss = F.cross_entropy(aug_logits, aug_labels)
+
             ss_losses["bkb_aug_contrastive"] = aug_loss
             ss_losses["total"] += aug_loss * aug_contrastive_loss_lambda
         ############
@@ -189,7 +213,9 @@ def moco(backbone,
             o.step()
 
         # momentum network update
-        for online, target in [(backbone, target_backbone), (projector, target_projector)]:
+        for online, target in [
+            (backbone, target_backbone), (projector, target_projector)
+        ]:
             for p1, p2 in zip(online.parameters(), target.parameters()):
                 p2.data.mul_(momentum).add_(p1.data, alpha=1 - momentum)
 
