@@ -1,6 +1,6 @@
 import math
 from copy import deepcopy
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 
 import torch
 import torch.nn as nn
@@ -102,6 +102,8 @@ def moco(backbone,
          aug_desc_type: str,
          aug_bkb_projector: nn.Module,
          aug_contrastive_loss_lambda: float,
+         aug_treatment: str,
+         aug_cond: List[str],
          momentum=0.999,
          K: int = 65536,
          T: float = 0.2,
@@ -120,9 +122,10 @@ def moco(backbone,
     queue.requires_grad = False
     queue.ptr = 0
 
+    use_contraug_loss = (aug_contrastive_loss_lambda > 0 and aug_treatment == AUG_STRATEGY.mlp)
     #############
 
-    if projector.aug_treatment == AUG_STRATEGY.mlp:
+    if use_contraug_loss:
         aug_queue = F.normalize(torch.randn(K, projector.aug_processor_out).to(device)).detach()
         aug_queue.requires_grad = False
         aug_queue.ptr = 0
@@ -148,7 +151,7 @@ def moco(backbone,
             aug_d1 = diff1
             aug_d2 = diff2
 
-        aug_keys = sorted(projector.aug_cond)
+        aug_keys = sorted(aug_cond)
 
         d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
         d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
@@ -175,7 +178,7 @@ def moco(backbone,
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
 
         ############
-        if projector.aug_treatment == AUG_STRATEGY.mlp:
+        if use_contraug_loss:
 
             b1, b2 = (
                 (y1, y2)
@@ -226,7 +229,7 @@ def moco(backbone,
         queue.ptr = (queue.ptr + keys.shape[0]) % K
 
         #############
-        if projector.aug_treatment == AUG_STRATEGY.mlp:
+        if  use_contraug_loss:
             aug_keys = idist.utils.all_gather(norm_aug.detach())
             aug_queue[aug_queue.ptr:aug_queue.ptr + aug_keys.shape[0]] = aug_keys
             aug_queue.ptr = (aug_queue.ptr + aug_keys.shape[0]) % K

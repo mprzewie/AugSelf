@@ -417,10 +417,13 @@ def load_fewshot_datasets(dataset='cifar10',
         test  = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
 
     elif dataset == 'plant_disease':
-        train = ImageFolder(os.path.join(datadir, 'train'), transform=transform)
-        test  = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
-        test.samples = train.samples + test.samples
-        test.targets = train.targets + test.targets
+        test = ImageFolder(os.path.join(datadir, 'train'), transform=transform)
+        # test  = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
+        # test.samples = train.samples + test.samples
+        # test.targets = train.targets + test.targets
+
+    else:
+        raise NotImplementedError(dataset)
 
     return dict(test=test)
 

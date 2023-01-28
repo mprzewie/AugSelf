@@ -72,6 +72,8 @@ class AugProjector(nn.Module):
                 else args.num_backbone_features
             )
 
+            args.aug_processor_out = self.aug_processor_out
+
             self.aug_processor = load_mlp(
                 n_in=sum(self.aug_subset_sizes.values()),
                 n_hidden=self.aug_nn_width,
