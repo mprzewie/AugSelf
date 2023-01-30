@@ -120,21 +120,21 @@ def moco(args, t1, t2):
         )
     )
 
-    if args.aug_cnt_lambda > 0 and args.aug_treatment == AUG_STRATEGY.mlp:
-        aug_bkb_projector = build_model(
-            load_mlp(
-                n_in=(
-                    args.num_backbone_features
-                    if args.aug_desc_type == AUG_DESC_TYPES.absolute
-                    else 2 * args.num_backbone_features
-                ),
-                n_hidden=args.aug_nn_width,
-                n_out=args.aug_processor_out,
-                num_layers=args.aug_nn_depth,
-            )
-        )
-    else:
-        aug_bkb_projector = nn.Identity()
+    # if args.aug_cnt_lambda > 0 and args.aug_treatment == AUG_STRATEGY.mlp:
+    #     aug_bkb_projector = build_model(
+    #         load_mlp(
+    #             n_in=(
+    #                 args.num_backbone_features
+    #                 if args.aug_desc_type == AUG_DESC_TYPES.absolute
+    #                 else 2 * args.num_backbone_features
+    #             ),
+    #             n_hidden=args.aug_nn_width,
+    #             n_out=args.aug_processor_out,
+    #             num_layers=args.aug_nn_depth,
+    #         )
+    #     )
+    # else:
+    #     aug_bkb_projector = nn.Identity()
 
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
@@ -146,8 +146,8 @@ def moco(args, t1, t2):
         build_optim(
             list(backbone.parameters())+
             list(projector.parameters()) +
-            ss_params +
-            list(aug_bkb_projector.parameters())
+            ss_params #+
+            # list(aug_bkb_projector.parameters())
         )
     ]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
@@ -160,10 +160,10 @@ def moco(args, t1, t2):
             optimizers=optimizers,
             device=device,
             ss_objective=ss_objective,
-            aug_desc_type=args.aug_desc_type,
-            aug_contrastive_loss_lambda=args.aug_cnt_lambda,
-            aug_bkb_projector=aug_bkb_projector,
-            aug_treatment=args.aug_treatment,
+            # aug_desc_type=args.aug_desc_type,
+            # aug_contrastive_loss_lambda=args.aug_cnt_lambda,
+            # aug_bkb_projector=aug_bkb_projector,
+            # aug_treatment=args.aug_treatment,
             aug_cond=args.aug_cond or []
     )
 
