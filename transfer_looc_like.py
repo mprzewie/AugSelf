@@ -423,8 +423,8 @@ def main_worker(gpu, ngpus_per_node, args):
                 engine=engine_mock,
                 global_step=epoch,
                 **{
-                    f"test_linear_looc_like_acc/{args.dataset_name}": acc1,
-                    f"test_linear_looc_like_best_acc/{args.dataset_name}": best_acc1,
+                    f"test_linear_looc_like_v2_acc/{args.dataset_name}": acc1,
+                    f"test_linear_looc_like_v2_best_acc/{args.dataset_name}": best_acc1,
                 }
             )
             save_checkpoint(
@@ -624,6 +624,7 @@ def adjust_learning_rate(optimizer, epoch, args):
         lr *= 0.1 if epoch >= milestone else 1.0
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr
+
 
 
 def accuracy(output, target, topk=(1,)):

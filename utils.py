@@ -32,7 +32,7 @@ def maybe_setup_wandb(logdir, args=None):
 
     wandb.init(
         entity=wandb_entity, project=wandb_project, config=args, name=run_name, dir=logdir, sync_tensorboard=True,
-        id=run_id, resume="allow"
+        id=run_id, resume="allow", group=run_name
     )
 
     print("WANDB run", wandb.run.id, run_name)
@@ -40,7 +40,7 @@ def maybe_setup_wandb(logdir, args=None):
 def get_engine_mock(ckpt_path: str):
     try:
         epoch_no = int(
-            ckpt_path.replace(".pth", "").replace("ckpt-", "")
+            Path(ckpt_path).name.replace(".pth", "").replace("ckpt-", "")
         )
     except:
         epoch_no = -1
@@ -83,6 +83,10 @@ class Logger(object):
 
     def log(self, engine, global_step, print_msg=True, **kwargs):
         msg = f'[epoch {engine.state.epoch}] [iter {engine.state.iteration}]'
+
+        kwargs["epoch"] = engine.state.epoch
+        kwargs["iter"] = engine.state.iter
+
         for k, v in kwargs.items():
             if isinstance(v, torch.Tensor):
                 v = v.item()
