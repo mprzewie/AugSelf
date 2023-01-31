@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from functools import partial
 from pathlib import Path
 
+import ignite.utils
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -339,6 +340,7 @@ def main(local_rank, args):
         )
 
     # DATASETS
+    logger.log_msg(f"{args.seed=}")
     logger.log_msg(f"Loading {args.dataset}")
     datasets = load_pretrain_datasets(dataset=args.dataset,
                                       datadir=args.datadir,
@@ -528,7 +530,10 @@ if __name__ == '__main__':
         help="Weight of backbone/augmentation contrastive loss"
     )
 
-
+    parser.add_argument(
+        "--seed", type=int, default=None,
+        help="Manual seed"
+    )
     parser.add_argument('--ss-crop',  type=float, default=-1)
     parser.add_argument('--ss-color', type=float, default=-1)
     parser.add_argument('--ss-flip',  type=float, default=-1)
@@ -540,7 +545,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256
 
-
+    if args.seed is not None:
+        ignite.utils.manual_seed(args.seed)
 
     if not args.distributed:
         with idist.Parallel() as parallel:
