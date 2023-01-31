@@ -215,11 +215,8 @@ def main_worker(gpu, ngpus_per_node, args):
         builtins.print = print_pass
 
     logdir = Path(args.pretrained).parent
+    logger = Logger(logdir=logdir, resume=True, wandb_suffix=f"looc-like_{args.dataset}")
 
-    logger = Logger(
-        logdir=logdir,
-        resume=True
-    )
     engine_mock = get_engine_mock(ckpt_path=args.pretrained)
 
     if args.gpu is not None:
@@ -424,7 +421,6 @@ def main_worker(gpu, ngpus_per_node, args):
                 global_step=epoch,
                 **{
                     f"test_linear_looc_like_v2_acc/{args.dataset_name}": acc1,
-                    f"test_linear_looc_like_v2_best_acc/{args.dataset_name}": best_acc1,
                 }
             )
             save_checkpoint(
@@ -440,6 +436,13 @@ def main_worker(gpu, ngpus_per_node, args):
             if epoch == args.start_epoch:
                 sanity_check(model.state_dict(), args.pretrained)
 
+    logger.log(
+        engine=engine_mock,
+        global_step=epoch,
+        **{
+            f"test_linear_looc_like_v2_best_acc/{args.dataset_name}": best_acc1,
+        }
+    )
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
     batch_time = AverageMeter("Time", ":6.3f")

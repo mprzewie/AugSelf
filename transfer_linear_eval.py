@@ -51,10 +51,12 @@ def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
 
-    logdir = Path(args.ckpt).parent
 
-    logger = Logger(logdir=logdir, resume=True)
-    engine_mock = get_engine_mock(ckpt_path=args.ckpt)
+    ckpt_parents = set([Path(c).parent for c in args.ckpt])
+    assert len(set(ckpt_parents)) == 1, f"Expected a single checkpoints directory but got {ckpt_parents}"
+    logdir = list(ckpt_parents)[0]
+
+    logger = Logger(logdir=logdir, resume=True, wandb_suffix=f"lin-{args.dataset}")
 
     # DATASETS
     datasets = load_datasets(dataset=args.dataset,
@@ -70,68 +72,77 @@ def main(local_rank, args):
     testloader  = build_dataloader(datasets['test'],  drop_last=False)
     num_classes = datasets['num_classes']
 
-    # MODELS
-    ckpt = torch.load(args.ckpt, map_location=device)
-    backbone = load_backbone(args)
-    backbone.load_state_dict(ckpt['backbone'])
+    for ckpt_path in sorted(args.ckpt):
+        engine_mock = get_engine_mock(ckpt_path=ckpt_path)
 
-    build_model = partial(idist.auto_model, sync_bn=True)
-    backbone   = build_model(backbone)
+        logger.log_msg(f"Evaluating {ckpt_path}")
+        ckpt = torch.load(ckpt_path, map_location=device)
+        backbone = load_backbone(args)
+        backbone.load_state_dict(ckpt['backbone'])
 
-    # EXTRACT FROZEN FEATURES
-    logger.log_msg('collecting features ...')
-    X_train, Y_train = collect_features(backbone, trainloader, device, normalize=False)
-    X_val,   Y_val   = collect_features(backbone, valloader,   device, normalize=False)
-    X_test,  Y_test  = collect_features(backbone, testloader,  device, normalize=False)
-    classifier = nn.Linear(args.num_backbone_features, num_classes).to(device)
-    optim_kwargs = {
-        'line_search_fn': 'strong_wolfe',
-        'max_iter': 5000,
-        'lr': 1.,
-        'tolerance_grad': 1e-10,
-        'tolerance_change': 0,
-    }
-    logger.log_msg('collecting features ... done')
+        build_model = partial(idist.auto_model, sync_bn=True)
+        backbone   = build_model(backbone)
 
-    best_acc = 0.
-    best_w = 0.
-    best_classifier = None
-    for w in torch.logspace(-6, 5, steps=45).tolist():
-        optimizer = optim.LBFGS(classifier.parameters(), **optim_kwargs)
-        optimizer.step(build_step(X_train, Y_train, classifier, optimizer, w))
-        acc = compute_accuracy(X_val, Y_val, classifier, args.metric)
-
-        if best_acc < acc:
-            best_acc = acc
-            best_w = w
-            best_classifier = deepcopy(classifier)
-
-        logger.log_msg(f'w={w:.4e}, acc={acc:.4f}')
-        if wandb.run is not None:
-            wandb.log({
-                "w": w,
-                f"val_linear/{args.dataset}": acc
-            })
-
-
-    logger.log_msg(f'BEST: w={best_w:.4e}, acc={best_acc:.4f}')
-
-    X = torch.cat([X_train, X_val], 0)
-    Y = torch.cat([Y_train, Y_val], 0)
-    optimizer = optim.LBFGS(best_classifier.parameters(), **optim_kwargs)
-    optimizer.step(build_step(X, Y, best_classifier, optimizer, best_w))
-    acc = compute_accuracy(X_test, Y_test, best_classifier, args.metric)
-    logger.log_msg(f'test acc={acc:.4f}')
-    logger.log(
-        engine=engine_mock, global_step=-1,
-        **{
-            f"test_linear/{args.dataset}": acc
+        # EXTRACT FROZEN FEATURES
+        logger.log_msg('collecting features ...')
+        X_train, Y_train = collect_features(backbone, trainloader, device, normalize=False)
+        X_val,   Y_val   = collect_features(backbone, valloader,   device, normalize=False)
+        X_test,  Y_test  = collect_features(backbone, testloader,  device, normalize=False)
+        classifier = nn.Linear(args.num_backbone_features, num_classes).to(device)
+        optim_kwargs = {
+            'line_search_fn': 'strong_wolfe',
+            'max_iter': 5000,
+            'lr': 1.,
+            'tolerance_grad': 1e-10,
+            'tolerance_change': 0,
         }
-    )
+        logger.log_msg('collecting features ... done')
+
+        best_acc = 0.
+        best_w = 0.
+        best_classifier = None
+        for w in torch.logspace(-6, 5, steps=45).tolist():
+            optimizer = optim.LBFGS(classifier.parameters(), **optim_kwargs)
+            optimizer.step(build_step(X_train, Y_train, classifier, optimizer, w))
+            acc = compute_accuracy(X_val, Y_val, classifier, args.metric)
+
+            if best_acc < acc:
+                best_acc = acc
+                best_w = w
+                best_classifier = deepcopy(classifier)
+
+            logger.log_msg(f'w={w:.4e}, acc={acc:.4f}')
+            logger.log(
+                engine=engine_mock, global_step=-1,
+                **{
+                    "w": w,
+                    f"val_linear/{args.dataset}": acc
+                }
+            )
+            if wandb.run is not None:
+                wandb.log({
+                    "w": w,
+                    f"val_linear/{args.dataset}": acc
+                })
+
+        logger.log_msg(f'BEST: w={best_w:.4e}, acc={best_acc:.4f}')
+
+        X = torch.cat([X_train, X_val], 0)
+        Y = torch.cat([Y_train, Y_val], 0)
+        optimizer = optim.LBFGS(best_classifier.parameters(), **optim_kwargs)
+        optimizer.step(build_step(X, Y, best_classifier, optimizer, best_w))
+        acc = compute_accuracy(X_test, Y_test, best_classifier, args.metric)
+        logger.log_msg(f'test acc={acc:.4f}')
+        logger.log(
+            engine=engine_mock, global_step=-1,
+            **{
+                f"test_linear/{args.dataset}": acc
+            }
+        )
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--ckpt', type=str, required=True)
+    parser.add_argument('--ckpt', type=str, required=True, nargs="+")
     parser.add_argument('--pretrain-data', type=str, default='stl10')
     parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--datadir', type=str, default='/data')

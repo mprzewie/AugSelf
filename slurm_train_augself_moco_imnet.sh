@@ -25,7 +25,8 @@ FRAMEWORK=moco
 BACKBONE=resnet50
 PRETRAIN_DATASET=imagenet100
 MAX_EPOCHS=500
-
+FREQ=50
+EVAL_FREQ=50
 
 BASE_DIR="/shared/results/przewiez/uj/AugSelf"
 
@@ -47,13 +48,13 @@ OUT_DIR="${BASE_DIR}/${EXP_NAME}"
 #    --batch-size 256 \
 #    --max-epochs $MAX_EPOCHS \
 #    --base-lr 0.05 --wd 1e-4 \
-#    --ckpt-freq 50 --eval-freq 50 \
+#    --ckpt-freq $FREQ --eval-freq $EVAL_FREQ \
 #    --ss-crop 0.5 --ss-color 0.5 \
 #    --num-workers 16 --distributed
 
 #### linear evaluation
 
-source setup_datadirs.sh
+source single_eval.sh
 
 #### linear evaluation
 
@@ -100,15 +101,15 @@ source setup_datadirs.sh
 
 #### linear (LOOC-like) evaluation
 
-for DS in "cub200" ; # "imagenet100"
-do
-  CUDA_VISIBLE_DEVICES=0 python transfer_looc_like.py \
-    -a resnet50 --lr 30.0 \
-    --batch-size 256 \
-    --dist-url 'tcp://localhost:10002' --world-size 1 --rank 0 --epochs 200  --schedule 120 160 \
-    --workers 4 \
-    --pretrained "${OUT_DIR}/ckpt-${MAX_EPOCHS}.pth" \
-    --dataset-name $DS ${datadirs["$DS"]}
-done
+#for DS in "cub200" ; # "imagenet100"
+#do
+#  CUDA_VISIBLE_DEVICES=0 python transfer_looc_like.py \
+#    -a resnet50 --lr 30.0 \
+#    --batch-size 256 \
+#    --dist-url 'tcp://localhost:10002' --world-size 1 --rank 0 --epochs 200  --schedule 120 160 \
+#    --workers 4 \
+#    --pretrained "${OUT_DIR}/ckpt-${MAX_EPOCHS}.pth" \
+#    --dataset-name $DS ${datadirs["$DS"]}
+#done
 
 

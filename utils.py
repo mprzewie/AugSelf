@@ -8,7 +8,7 @@ import wandb
 from torch.utils.tensorboard import SummaryWriter
 
 
-def maybe_setup_wandb(logdir, args=None):
+def maybe_setup_wandb(logdir, args=None, run_name_suffix=None):
 
     wandb_entity = os.environ.get("WANDB_ENTITY")
     wandb_project = os.environ.get("WANDB_PROJECT")
@@ -18,33 +18,46 @@ def maybe_setup_wandb(logdir, args=None):
         print("Not initializing WANDB")
         return
 
-    run_name = Path(logdir).name
+    origin_run_name = Path(logdir).name
 
-    run_id = None
     api = wandb.Api()
 
-    retrieved_runs = api.runs(f'{wandb_entity}/{wandb_project}', filters={'display_name': run_name})
-    print(f'Retrieved {len(retrieved_runs)} for run_name: {run_name}')
+    name_runs = list(api.runs(f'{wandb_entity}/{wandb_project}', filters={'display_name': origin_run_name}))
+    group_runs = list(api.runs(f'{wandb_entity}/{wandb_project}', filters={'group': origin_run_name}))
 
-    assert len(retrieved_runs) <= 1, f'retrieved_runs: {len(retrieved_runs)}'
-    if len(retrieved_runs) == 1:
-        run_id = retrieved_runs[0].id
+    print(f'Retrieved {len(name_runs)} for run_name: {origin_run_name}')
+
+    assert len(name_runs) <= 1, f'retrieved_runs: {len(name_runs)}'
+
+    new_run_name = origin_run_name if len(name_runs) == 0 else f"{origin_run_name}_{len(group_runs)}"
+
+    if run_name_suffix is not None:
+        new_run_name = f"{new_run_name}_{run_name_suffix}"
 
     wandb.init(
-        entity=wandb_entity, project=wandb_project, config=args, name=run_name, dir=logdir, sync_tensorboard=True,
-        id=run_id, resume="allow", group=run_name
+        entity=wandb_entity,
+        project=wandb_project,
+        config=args,
+        name=new_run_name,
+        dir=logdir,
+        # sync_tensorboard=True,
+        resume="never",
+        group=origin_run_name
     )
 
-    print("WANDB run", wandb.run.id, run_name)
+    print("WANDB run", wandb.run.id, new_run_name, origin_run_name)
 
 def get_engine_mock(ckpt_path: str):
+    print("Mocking engine from", ckpt_path)
     try:
         epoch_no = int(
             Path(ckpt_path).name.replace(".pth", "").replace("ckpt-", "")
         )
-    except:
+    except Exception as e:
+        print("Epoch inference error", e)
         epoch_no = -1
 
+    print(f"Engine mock inferred {epoch_no=}")
     class engine:
         class state:
             epoch = epoch_no
@@ -55,7 +68,7 @@ def get_engine_mock(ckpt_path: str):
 
 class Logger(object):
 
-    def __init__(self, logdir, resume=None, args=None):
+    def __init__(self, logdir, resume=None, args=None, wandb_suffix=None):
         assert logdir is not None
 
         self.logdir = logdir
@@ -65,7 +78,7 @@ class Logger(object):
         if logdir is not None and self.rank == 0:
             if resume is None:
                 os.makedirs(logdir)
-            maybe_setup_wandb(logdir=logdir, args=args)
+            maybe_setup_wandb(logdir=logdir, args=args, run_name_suffix=wandb_suffix)
             handlers.append(logging.FileHandler(os.path.join(logdir, 'log.txt')))
             self.writer = SummaryWriter(log_dir=logdir)
         else:
@@ -85,8 +98,10 @@ class Logger(object):
         msg = f'[epoch {engine.state.epoch}] [iter {engine.state.iteration}]'
 
         kwargs["epoch"] = engine.state.epoch
-        kwargs["iter"] = engine.state.iter
+        kwargs["iteration"] = engine.state.iteration
+        kwargs["log_step"] = global_step
 
+        wandb_log = dict()
         for k, v in kwargs.items():
             if isinstance(v, torch.Tensor):
                 v = v.item()
@@ -98,6 +113,11 @@ class Logger(object):
 
             if self.writer is not None:
                 self.writer.add_scalar(k, v, global_step)
+            wandb_log[k] = v
+
+        if wandb.run is not None:
+            wandb.log(wandb_log)
+
 
         if print_msg:
             logging.info(msg)

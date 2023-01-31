@@ -63,7 +63,7 @@ def main(local_rank, args):
     device = idist.device()
     logdir = Path(args.ckpt).parent
 
-    logger = Logger(logdir=logdir, resume=True)
+    logger = Logger(logdir=logdir, resume=True, wandb_suffix=f"{args.N}-way_{args.K}-shot_{args.dataset}")
     engine_mock = get_engine_mock(ckpt_path=args.ckpt)
 
     # DATASETS
@@ -108,12 +108,7 @@ def main(local_rank, args):
         all_accuracies.append(acc)
         if (i+1) % 10 == 0:
             logger.log_msg(f'{i+1:3d} | {acc:.4f} (mean: {np.mean(all_accuracies):.4f})')
-            logger.log(
-                engine=engine_mock, global_step=i,
-                **{
-                    f"test_few-shot_{args.N}-way_{args.K}-shot/{args.dataset}": np.mean(all_accuracies)
-                }
-            )
+
 
     avg = np.mean(all_accuracies)
     std = np.std(all_accuracies) * 1.96 / np.sqrt(len(all_accuracies))
