@@ -25,6 +25,8 @@ FRAMEWORK=moco
 BACKBONE=resnet18
 PRETRAIN_DATASET=stl10
 MAX_EPOCHS=200
+FREQ=50
+EVAL_FREQ=$MAX_EPOCHS
 
 
 BASE_DIR="/shared/results/przewiez/uj/AugSelf"
