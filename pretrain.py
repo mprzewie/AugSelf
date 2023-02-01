@@ -265,7 +265,10 @@ def swav(args, t1, t2):
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
-    logger = Logger(args.logdir, args.resume, args=args)
+    logger = Logger(
+        args.logdir, args.resume, args=args,
+        job_type="pretrain"
+    )
 
     # DATASETS
     datasets = load_pretrain_datasets(dataset=args.dataset,

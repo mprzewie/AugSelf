@@ -56,7 +56,12 @@ def main(local_rank, args):
     assert len(set(ckpt_parents)) == 1, f"Expected a single checkpoints directory but got {ckpt_parents}"
     logdir = list(ckpt_parents)[0]
 
-    logger = Logger(logdir=logdir, resume=True, wandb_suffix=f"lin-{args.dataset}")
+    args.origin_run_name = logdir.name
+    logger = Logger(
+        logdir=logdir, resume=True, wandb_suffix=f"lin-{args.dataset}", args=args,
+        job_type="eval_linear"
+
+    )
 
     # DATASETS
     datasets = load_datasets(dataset=args.dataset,

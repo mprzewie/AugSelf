@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import List, Optional
 
 import ignite.distributed as idist
 import torch
@@ -8,7 +9,7 @@ import wandb
 from torch.utils.tensorboard import SummaryWriter
 
 
-def maybe_setup_wandb(logdir, args=None, run_name_suffix=None):
+def maybe_setup_wandb(logdir, args=None, run_name_suffix=None, **init_kwargs):
 
     wandb_entity = os.environ.get("WANDB_ENTITY")
     wandb_project = os.environ.get("WANDB_PROJECT")
@@ -40,9 +41,9 @@ def maybe_setup_wandb(logdir, args=None, run_name_suffix=None):
         config=args,
         name=new_run_name,
         dir=logdir,
-        # sync_tensorboard=True,
         resume="never",
-        group=origin_run_name
+        group=origin_run_name,
+        **init_kwargs
     )
 
     print("WANDB run", wandb.run.id, new_run_name, origin_run_name)
@@ -68,7 +69,7 @@ def get_engine_mock(ckpt_path: str):
 
 class Logger(object):
 
-    def __init__(self, logdir, resume=None, args=None, wandb_suffix=None):
+    def __init__(self, logdir, resume=None, args=None, wandb_suffix=None, **wandb_kwargs):
         assert logdir is not None
 
         self.logdir = logdir
@@ -78,7 +79,7 @@ class Logger(object):
         if logdir is not None and self.rank == 0:
             if resume is None:
                 os.makedirs(logdir)
-            maybe_setup_wandb(logdir=logdir, args=args, run_name_suffix=wandb_suffix)
+            maybe_setup_wandb(logdir=logdir, args=args, run_name_suffix=wandb_suffix, **wandb_kwargs)
             handlers.append(logging.FileHandler(os.path.join(logdir, 'log.txt')))
             self.writer = SummaryWriter(log_dir=logdir)
         else:

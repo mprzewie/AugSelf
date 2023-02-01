@@ -63,7 +63,11 @@ def main(local_rank, args):
     device = idist.device()
     logdir = Path(args.ckpt).parent
 
-    logger = Logger(logdir=logdir, resume=True, wandb_suffix=f"{args.N}-way_{args.K}-shot_{args.dataset}")
+    args.origin_run_name = logdir.name
+    logger = Logger(
+        logdir=logdir, resume=True, wandb_suffix=f"{args.N}-way_{args.K}-shot_{args.dataset}", args=args,
+        job_type="eval_few-shot"
+    )
     engine_mock = get_engine_mock(ckpt_path=args.ckpt)
 
     # DATASETS

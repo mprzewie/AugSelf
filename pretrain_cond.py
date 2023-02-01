@@ -324,7 +324,10 @@ def swav(args, t1, t2):
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
-    logger = Logger(args.logdir, args.resume, args=args)
+    logger = Logger(
+        args.logdir, args.resume, args=args,
+        job_type="pretrain"
+    )
 
     with (Path(args.logdir) / "rerun.sh").open("w") as f:
         print("python", " ".join(sys.argv), file=f)
