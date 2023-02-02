@@ -14,7 +14,10 @@ Accepted to NeurIPS 2021
 conda create -n AugSelf python=3.8 pytorch=1.7.1 torchvision=0.8.2 cudatoolkit=10.1 ignite -c pytorch
 conda activate AugSelf
 pip install scipy tensorboard kornia==0.4.1 sklearn
+#conda update pytorch torchvision
+conda install -c conda-forge packaging
 conda install -c conda-forge wandb
+#conda install -c anaconda chardet
 ```
 
 ## Checkpoints
