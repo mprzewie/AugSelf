@@ -36,12 +36,13 @@ def prepare_training_batch(batch, t1, t2, device) -> Tuple[
 def simsiam(backbone,
             projector,
             predictor,
-            # ss_predictor: SSPredictor,
+            ss_predictor,
             t1,
             t2,
             optimizers,
             device,
-            # ss_objective: SSObjective
+            ss_objective: SSObjective,
+            aug_cond: List[str]
             ):
     def training_step(engine, batch):
         backbone.train()
@@ -51,18 +52,20 @@ def simsiam(backbone,
         for o in optimizers:
             o.zero_grad()
 
-        x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
+        (x1, x2), (desc1, desc2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
         y1, y2 = backbone(x1), backbone(x2)
 
-        aug_keys = sorted(d1.keys())
-        d1_cat = torch.concat([d1[k] for k in aug_keys], dim=1)
-        d2_cat = torch.concat([d2[k] for k in aug_keys], dim=1)
-        y_d_1 = torch.concat([y1, d1_cat], dim=1)
-        y_d_2 = torch.concat([y2, d2_cat], dim=1)
+        aug_ks = sorted(aug_cond)
+        d1_cat = torch.cat([desc1[k] for k in aug_ks], dim=1)
+        d2_cat = torch.cat([desc2[k] for k in aug_ks], dim=1)
+        y_1d_1 = torch.cat([y1, d1_cat], dim=1)
+        y_2d_2 = torch.cat([y2, d2_cat], dim=1)
 
-        if True:  # not ss_objective.only:
-            z1 = projector(y_d_1)
-            z2 = projector(y_d_2)
+        if not ss_objective.only:
+            z1 = projector(y1, d1_cat)
+            z2 = projector(y2, d2_cat)
+            #z1 = projector(y_1d_1, d1_cat)
+            #z2 = projector(y_2d_2, d2_cat)
             p1 = predictor(z1)
             p2 = predictor(z2)
             loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
@@ -72,16 +75,15 @@ def simsiam(backbone,
             loss = 0.
 
         outputs = dict(loss=loss)
-        if True:  # not ss_objective.only:
+        if not ss_objective.only:
             outputs['z1'] = z1
             outputs['z2'] = z2
 
-        # ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
-        # (loss+ss_losses['total']).backward()
-        loss.backward()
+        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
+        (loss+ss_losses['total']).backward()
 
-        # for k, v in ss_losses.items():
-        #     outputs[f'ss/{k}'] = v
+        for k, v in ss_losses.items():
+            outputs[f'ss/{k}'] = v
 
         for o in optimizers:
             o.step()
