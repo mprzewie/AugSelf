@@ -12,8 +12,8 @@ from torch.utils.data import random_split, ConcatDataset, Subset
 
 from transforms import MultiView, RandomResizedCrop, ColorJitter, GaussianBlur, RandomRotation
 from torchvision import transforms as T
-from torchvision.datasets import STL10, CIFAR10, CIFAR100, ImageFolder, ImageNet, Caltech101, Caltech256, Flowers102, \
-    Food101, DTD, OxfordIIITPet, StanfordCars, FGVCAircraft
+from torchvision.datasets import STL10, CIFAR10, CIFAR100, ImageFolder, ImageNet, Caltech101, Caltech256 #\
+#    Flowers102, Food101, DTD, OxfordIIITPet, StanfordCars, FGVCAircraft
 
 import kornia.augmentation as K
 
@@ -92,7 +92,8 @@ class ImageNet100(ImageFolder):
 
 class SUN397(ImageList):
     def __init__(self, root, split, transform=None):
-        root = os.path.join(root, "SUN397")
+        # some files exists only in /storage/shared/datasets/mimit67_indoor_scenes/indoorCVPR_09/images_train_test/Images/
+        root = os.path.join(root, "sun397")
         with open(os.path.join(root, 'ClassName.txt')) as f:
             classes = [line.strip() for line in f]
 
@@ -252,11 +253,11 @@ def load_datasets(dataset='cifar10',
         test     = ImageNet100(datadir, split='val', transform=transform)
         num_classes = 100
 
-    elif dataset == 'food101':
-        trainval   = Food101(root=datadir, split='train', transform=transform, download=True)
-        train, val = random_split(trainval, [68175, 7575], generator=generator(42))
-        test       = Food101(root=datadir, split='test',  transform=transform, download=True)
-        num_classes = 101
+    # elif dataset == 'food101':
+    #     trainval   = Food101(root=datadir, split='train', transform=transform, download=True)
+    #     train, val = random_split(trainval, [68175, 7575], generator=generator(42))
+    #     test       = Food101(root=datadir, split='test',  transform=transform, download=True)
+    #     num_classes = 101
 
     elif dataset == 'cifar10':
         trainval   = CIFAR10(root=datadir, train=True,  transform=transform, download=True)
@@ -278,20 +279,20 @@ def load_datasets(dataset='cifar10',
         test     = SUN397(root=datadir, split='Testing',  transform=transform)
         num_classes = 397
 
-    elif dataset == 'dtd':
-        train    = DTD(root=datadir, split='train', transform=transform, download=True)
-        val      = DTD(root=datadir, split='val',   transform=transform, download=True)
-        trainval = ConcatDataset([train, val])
-        test     = DTD(root=datadir, split='test',  transform=transform, download=True)
-        num_classes = 47
+    # elif dataset == 'dtd':
+    #     train    = DTD(root=datadir, split='train', transform=transform, download=True)
+    #     val      = DTD(root=datadir, split='val',   transform=transform, download=True)
+    #     trainval = ConcatDataset([train, val])
+    #     test     = DTD(root=datadir, split='test',  transform=transform, download=True)
+    #     num_classes = 47
 
-    elif dataset == 'pets':
-        trainval   = OxfordIIITPet(root=datadir, split='trainval', transform=transform, download=True)
-        train, val = random_split(trainval, [2940, 740], generator=generator(49))
-        test       = OxfordIIITPet(root=datadir, split='test',     transform=transform, download=True)
-        num_classes = 37
+    # elif dataset == 'pets':
+    #     trainval   = OxfordIIITPet(root=datadir, split='trainval', transform=transform, download=True)
+    #     train, val = random_split(trainval, [2940, 740], generator=generator(49))
+    #     test       = OxfordIIITPet(root=datadir, split='test',     transform=transform, download=True)
+    #     num_classes = 37
 
-    elif dataset == 'caltech101':
+    elif dataset == 'caltech_101':
         transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         D = Caltech101(datadir, transform=transform, download=True)
         trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
@@ -301,36 +302,36 @@ def load_datasets(dataset='cifar10',
         test     = Subset(D, tst_indices)
         num_classes = 101
 
-    elif dataset == 'flowers':
-        train = Flowers102(datadir, split="train", transform=transform, download=True)
-        val = Flowers102(datadir, split="val", transform=transform, download=True)
-        test = Flowers102(datadir, split="test", transform=transform, download=True)
+    # elif dataset == 'flowers':
+    #     train = Flowers102(datadir, split="train", transform=transform, download=True)
+    #     val = Flowers102(datadir, split="val", transform=transform, download=True)
+    #     test = Flowers102(datadir, split="test", transform=transform, download=True)
 
-        trainval = ConcatDataset([train, val])
-        num_classes = 102
+    #     trainval = ConcatDataset([train, val])
+    #     num_classes = 102
 
-    elif dataset in ['flowers-5shot', 'flowers-10shot']:
-        if dataset == 'flowers-5shot':
-            n = 5
-        else:
-            n = 10
-        train = Flowers102(datadir, split="train", transform=transform, download=True)
-        val = Flowers102(datadir, split="val", transform=transform, download=True)
-        trainval = Flowers102(datadir, split="train", transform=transform, download=True)
-        trainval._image_files += val._image_files
-        trainval._labels += val._labels
+    # elif dataset in ['flowers-5shot', 'flowers-10shot']:
+    #     if dataset == 'flowers-5shot':
+    #         n = 5
+    #     else:
+    #         n = 10
+    #     train = Flowers102(datadir, split="train", transform=transform, download=True)
+    #     val = Flowers102(datadir, split="val", transform=transform, download=True)
+    #     trainval = Flowers102(datadir, split="train", transform=transform, download=True)
+    #     trainval._image_files += val._image_files
+    #     trainval._labels += val._labels
 
-        test = Flowers102(datadir, split="test", transform=transform, download=True)
+    #     test = Flowers102(datadir, split="test", transform=transform, download=True)
 
-        trainval = ConcatDataset([train, val])
+    #     trainval = ConcatDataset([train, val])
 
-        indices = defaultdict(list)
-        for i, y in enumerate(trainval._labels):
-            indices[y].append(i)
-        indices = sum([random.sample(indices[y], n) for y in indices.keys()], [])
-        trainval = Subset(trainval, indices)
-        # test     = ImageFolder(os.path.join(datadir, 'tst'), transform=transform)
-        num_classes = 102
+    #     indices = defaultdict(list)
+    #     for i, y in enumerate(trainval._labels):
+    #         indices[y].append(i)
+    #     indices = sum([random.sample(indices[y], n) for y in indices.keys()], [])
+    #     trainval = Subset(trainval, indices)
+    #     # test     = ImageFolder(os.path.join(datadir, 'tst'), transform=transform)
+    #     num_classes = 102
 
     elif dataset == 'stl10':
         trainval   = STL10(root=datadir, split='train', transform=transform, download=True)
@@ -356,19 +357,19 @@ def load_datasets(dataset='cifar10',
         test     = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
         num_classes = 200
 
-    elif dataset == 'cars':
-        trainval = StanfordCars(datadir, "train", transform=transform, download=True)
-        test =  StanfordCars(datadir, "test", transform=transform, download=True)
-        train, val = random_split(trainval, [7000, 1144], generator=generator(51))
-        num_classes = 196
+    # elif dataset == 'cars':
+    #     trainval = StanfordCars(datadir, "train", transform=transform, download=True)
+    #     test =  StanfordCars(datadir, "test", transform=transform, download=True)
+    #     train, val = random_split(trainval, [7000, 1144], generator=generator(51))
+    #     num_classes = 196
 
-    elif dataset == 'aircraft':
-        trainval = FGVCAircraft(datadir, "trainval", transform=transform, download=True)
-        train = FGVCAircraft(datadir, "train", transform=transform, download=True)
-        val = FGVCAircraft(datadir, "val", transform=transform, download=True)
+    # elif dataset == 'aircraft':
+    #     trainval = FGVCAircraft(datadir, "trainval", transform=transform, download=True)
+    #     train = FGVCAircraft(datadir, "train", transform=transform, download=True)
+    #     val = FGVCAircraft(datadir, "val", transform=transform, download=True)
 
-        test =  FGVCAircraft(datadir, "test", transform=transform, download=True)
-        num_classes = 100
+    #     test =  FGVCAircraft(datadir, "test", transform=transform, download=True)
+    #     num_classes = 100
 
     # elif dataset == 'dog':
     #     not metnioned in the paper?
