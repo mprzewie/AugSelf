@@ -1,8 +1,7 @@
 source "${SRC_DIR}ovh_setup_datadirs.sh"
 
 #### linear evaluation
-# "flowers" "dtd" "food101" "cars" "pets" "aircraft" 
-for DS in "cifar10" "cifar100" "mit67" "caltech101" "sun397";
+for DS in "cifar10" "cifar100" "sun397" "caltech_101" "food101" "dtd" "pets" "cars" "aircraft" "flowers";
 do
   {
     DS_DIR="${datadirs["$DS"]}"
