@@ -133,8 +133,8 @@ def moco(backbone,
 
         aug_keys = sorted(aug_cond)
 
-        d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
-        d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
+        d1_cat = torch.cat([aug_d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.cat([aug_d2[k] for k in aug_keys], dim=1)
 
         y1 = backbone(x1)
         z1 = F.normalize(
