@@ -1,10 +1,8 @@
-source setup_datadirs.sh
-
+source "${SRC_DIR}ovh_setup_datadirs.sh"
 
 #### linear evaluation
-
-
-for DS in "cifar10" "cifar100" "food101" "mit67" "pets" "flowers" "caltech101" "cars" "aircraft" "dtd" "sun397";
+# "flowers" "dtd" "food101" "cars" "pets" "aircraft" 
+for DS in "cifar10" "cifar100" "mit67" "caltech101" "sun397";
 do
   {
     DS_DIR="${datadirs["$DS"]}"
@@ -13,7 +11,7 @@ do
 
     CKPT_SEQ=$(for E in `seq $EVAL_FREQ $EVAL_FREQ $MAX_EPOCHS`; do echo "${OUT_DIR}/ckpt-${E}.pth"; done)
 
-    CUDA_VISIBLE_DEVICES=0 python transfer_linear_eval.py \
+    CUDA_VISIBLE_DEVICES=$CUDA python transfer_linear_eval.py \
       --pretrain-data $PRETRAIN_DATASET \
       --ckpt $CKPT_SEQ \
       --model $BACKBONE \
