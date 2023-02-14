@@ -1,5 +1,7 @@
 eval "$(conda shell.bash hook)"
-conda activate AugSelfCond
+conda activate AugSelfConditioning
+
+set -x
 
 cd /home/mpyl/contrastif/AugSelf 
 
@@ -7,7 +9,7 @@ export WANDB_API_KEY=fbe8977ced9962ba4c826b6e012e35dad2c3f044
 export WANDB_PROJECT=conditional_contrastive
 export WANDB_ENTITY=gmum
 
-SRC_DIR="/home/mpyl/contrastif/AugSelf"
+SRC_DIR="/home/mpyl/contrastif/AugSelf/"
 RES_DIR="/storage/shared/results/mateusz.pyla/AugSelf/"
 
 FRAMEWORK=moco
@@ -19,10 +21,10 @@ FREQ=50
 EVAL_FREQ=50
 SEED=1997
 
-EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_augself"
-OUT_DIR="${RES_DIR}/${EXP_NAME}"
+EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_augself_ful"
+OUT_DIR="${RES_DIR}${EXP_NAME}"
 
-CUDA=1
+CUDA="3"
 #nvidia-smi
 
 #### data

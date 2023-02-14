@@ -10,19 +10,18 @@ export WANDB_ENTITY=gmum
 SRC_DIR="/home/mpyl/contrastif/AugSelf/"
 RES_DIR="/storage/shared/results/mateusz.pyla/AugSelf/"
 
-FRAMEWORK=moco
-BACKBONE=resnet50
-PRETRAIN_DATASET=imagenet100
-# IN100_PATH="/storage/shared/datasets/ImageNet100_ssl"
-MAX_EPOCHS=300
-FREQ=50
-EVAL_FREQ=50
+FRAMEWORK=simclr
+BACKBONE=resnet18
+PRETRAIN_DATASET=stl10
+MAX_EPOCHS=4
+FREQ=2
+EVAL_FREQ=2
 SEED=1997
 
 EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_cond"
 OUT_DIR="${RES_DIR}${EXP_NAME}"
 
-CUDA="0,1,2,3"
+CUDA="0,1"
 #nvidia-smi
 
 cd "${SRC_DIR}"
@@ -32,19 +31,21 @@ source "${SRC_DIR}ovh_setup_datadirs.sh"
 
 for AUG_TREATMENT in "mlp";
 do
-  for AUG_NN_DEPTH in 2 3;
+  for AUG_NN_DEPTH in 2;
   do
-    for AUG_NN_WIDTH in 8 16;
+    for AUG_NN_WIDTH in 8;
     do
-      for AUG_INJ in "proj-cat"
+      for CUR_LR in 0.05;
       do
-        {
-          EXTRA_ARGS="--aug-cond crop color --base-lr 0.05 --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16 --distributed"
-          SUFFIX="crop_color_demo"
-          source "${SRC_DIR}single_experiment.sh"
-        }
+        for AUG_INJ in "proj-cat"
+        do
+          {
+            EXTRA_ARGS="--aug-cond crop color --base-lr ${CUR_LR} --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16 --distributed"
+            SUFFIX="crop_color_quick"
+            source "${SRC_DIR}single_experiment.sh"
+          }
+        done
       done
-
     done
   done
 done

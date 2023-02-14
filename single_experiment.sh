@@ -1,8 +1,8 @@
 EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_${AUG_TREATMENT}_${AUG_NN_DEPTH}_${AUG_NN_WIDTH}_${AUG_INJ}_${SUFFIX}"
-OUT_DIR="${BASE_DIR}/${EXP_NAME}"
+OUT_DIR="${RES_DIR}${EXP_NAME}"
 
 
- python pretrain_cond.py \
+CUDA_VISIBLE_DEVICES=$CUDA python pretrain_cond.py \
           --logdir $OUT_DIR \
           --framework $FRAMEWORK \
           --dataset $PRETRAIN_DATASET \
@@ -14,5 +14,4 @@ OUT_DIR="${BASE_DIR}/${EXP_NAME}"
           --aug-nn-depth $AUG_NN_DEPTH --aug-nn-width $AUG_NN_WIDTH \
           --aug-inj-type $AUG_INJ $EXTRA_ARGS
 
-source single_eval.sh
-
+source "${SRC_DIR}single_eval.sh"

@@ -12,8 +12,8 @@ from torch.utils.data import random_split, ConcatDataset, Subset
 
 from transforms import MultiView, RandomResizedCrop, ColorJitter, GaussianBlur, RandomRotation
 from torchvision import transforms as T
-from torchvision.datasets import STL10, CIFAR10, CIFAR100, ImageFolder, ImageNet, Caltech101, Caltech256, Flowers102, \
-    Food101, DTD, OxfordIIITPet, StanfordCars, FGVCAircraft
+from torchvision.datasets import STL10, CIFAR10, CIFAR100, ImageFolder, ImageNet, Caltech101, Caltech256
+from datasets_newer_torch import Flowers102, Food101, DTD, OxfordIIITPet, StanfordCars, FGVCAircraft
 
 import kornia.augmentation as K
 
@@ -54,18 +54,18 @@ class ImageNet100(ImageFolder):
         self.class_to_idx = class_to_idx
         self.targets = [s[1] for s in samples]
 
-# class Pets(ImageList):
-#     def __init__(self, root, split, transform=None):
-#         with open(os.path.join(root, 'annotations', f'{split}.txt')) as f:
-#             annotations = [line.split() for line in f]
-#
-#         samples = []
-#         for sample in annotations:
-#             path = os.path.join(root, 'images', sample[0] + '.jpg')
-#             label = int(sample[1])-1
-#             samples.append((path, label))
-#
-#         super().__init__(samples, transform)
+class Pets(ImageList):
+    def __init__(self, root, split, transform=None):
+        with open(os.path.join(root, 'annotations', f'{split}.txt')) as f:
+            annotations = [line.split() for line in f]
+
+        samples = []
+        for sample in annotations:
+            path = os.path.join(root, 'images', sample[0] + '.jpg')
+            label = int(sample[1])-1
+            samples.append((path, label))
+
+        super().__init__(samples, transform)
 
 # class Food101(ImageList):
 #     def __init__(self, root, split, transform=None):
@@ -73,26 +73,27 @@ class ImageNet100(ImageFolder):
 #             classes = [line.strip() for line in f]
 #         with open(os.path.join(root, 'meta', f'{split}.json')) as f:
 #             annotations = json.load(f)
-#
+
 #         samples = []
 #         for i, cls in enumerate(classes):
 #             for path in annotations[cls]:
 #                 samples.append((os.path.join(root, 'images', f'{path}.jpg'), i))
-#
+
 #         super().__init__(samples, transform)
 
 # class DTD(ImageList):
 #     def __init__(self, root, split, transform=None):
 #         with open(os.path.join(root, 'labels', f'{split}1.txt')) as f:
 #             paths = [line.strip() for line in f]
-#
+
 #         classes = sorted(os.listdir(os.path.join(root, 'images')))
 #         samples = [(os.path.join(root, 'images', path), classes.index(path.split('/')[0])) for path in paths]
 #         super().__init__(samples, transform)
 
 class SUN397(ImageList):
     def __init__(self, root, split, transform=None):
-        root = os.path.join(root, "SUN397")
+        # some files exists only in /storage/shared/datasets/mimit67_indoor_scenes/indoorCVPR_09/images_train_test/Images/
+        root = os.path.join(root, "sun397")
         with open(os.path.join(root, 'ClassName.txt')) as f:
             classes = [line.strip() for line in f]
 
@@ -291,9 +292,9 @@ def load_datasets(dataset='cifar10',
         test       = OxfordIIITPet(root=datadir, split='test',     transform=transform, download=True)
         num_classes = 37
 
-    elif dataset == 'caltech101':
+    elif dataset == 'caltech_101':
         transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
-        D = Caltech101(datadir, transform=transform, download=True)
+        D = Caltech101(datadir, transform=transform, download=False) # changed flag download
         trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
         train    = Subset(D, trn_indices)
         val      = Subset(D, val_indices)
@@ -370,14 +371,14 @@ def load_datasets(dataset='cifar10',
         test =  FGVCAircraft(datadir, "test", transform=transform, download=True)
         num_classes = 100
 
-    # elif dataset == 'dog':
-    #     not metnioned in the paper?
-    #     trn_indices, val_indices = torch.load('splits/dog.pth')
-    #     trainval = ImageFolder(os.path.join(datadir, 'train'), transform=transform)
-    #     train    = Subset(trainval, trn_indices)
-    #     val      = Subset(trainval, val_indices)
-    #     test     = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
-    #     num_classes = 120
+    elif dataset == 'dog':
+        # not mentioned in the paper?
+        trn_indices, val_indices = torch.load('splits/dog.pth')
+        trainval = ImageFolder(os.path.join(datadir, 'train'), transform=transform)
+        train    = Subset(trainval, trn_indices)
+        val      = Subset(trainval, val_indices)
+        test     = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
+        num_classes = 120
 
     return dict(trainval=trainval,
                 train=train,
