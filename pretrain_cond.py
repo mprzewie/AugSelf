@@ -191,40 +191,43 @@ def simclr(args, t1, t2):
     out_dim = 128
     device = idist.device()
 
-    # ss_objective = SSObjective(
-    #     crop  = args.ss_crop,
-    #     color = args.ss_color,
-    #     flip  = args.ss_flip,
-    #     blur  = args.ss_blur,
-    #     only  = args.ss_only,
-    # )
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        only  = args.ss_only,
+    )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
-    projector    = build_model(load_mlp(args.num_backbone_features,
-                                        args.num_backbone_features,
-                                        out_dim,
-                                        num_layers=2,
-                                        last_bn=False))
+    cond_projector : AugProjector= build_model(
+        AugProjector(
+            args,
+            proj_out_dim=out_dim,
+            proj_depth=2,
+        )
+    )
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params)]
+    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters())+ss_params)]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.simclr(backbone=backbone,
-                              projector=projector,
+                              projector=cond_projector,
                               ss_predictor=ss_predictor,
                               t1=t1, t2=t2,
                               optimizers=optimizers,
                               device=device,
-                              ss_objective=ss_objective)
+                              ss_objective=ss_objective,
+                              aug_cond=args.aug_cond or [])
 
     return dict(backbone=backbone,
-                projector=projector,
+                projector=cond_projector,
                 ss_predictor=ss_predictor,
                 optimizers=optimizers,
                 schedulers=schedulers,
@@ -378,7 +381,7 @@ def main(local_rank, args):
     logger.log_msg(f"Building {args.framework}")
 
 
-    assert args.framework in ["moco", "simsiam"] # TODO
+    assert args.framework in ["moco", "simsiam", "simclr"] # TODO
 
     if args.framework == 'simsiam':
         models = simsiam(args, t1, t2)
