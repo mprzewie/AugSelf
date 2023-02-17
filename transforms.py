@@ -1,4 +1,6 @@
 import random
+from typing import Union, Tuple, List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as NF
@@ -49,9 +51,14 @@ class ColorJitter(K.ColorJitter):
             lambda img: KF.apply_adjust_hue(img, params)
         ]
 
+        x_new = x
         for idx in params['order'].tolist():
             t = transforms[idx]
-            x = t(x)
+            x_new = t(x_new)
+
+        x_means = x.mean(dim=[2,3])
+        x_new_means = x_new.mean(dim=[2,3])
+        params["x_means_diff"] = (x_means - x_new_means).cpu()
 
         return x
 
@@ -116,7 +123,12 @@ def _extract_w(t):
         w[to_apply, 1] = (t._params['contrast_factor'] - 1) / (t.contrast[1]-t.contrast[0])
         w[to_apply, 2] = (t._params['saturation_factor'] - 1) / (t.saturation[1]-t.saturation[0])
         w[to_apply, 3] = t._params['hue_factor'] / (t.hue[1]-t.hue[0])
-        return w
+
+        x_means_diff = t._params["x_means_diff"]
+        x_means_batch = torch.zeros(to_apply.shape[0], x_means_diff.shape[1])
+        x_means_batch[to_apply] = x_means_diff
+
+        return w, x_means_batch
 
     elif isinstance(t, RandomRotation):
         to_apply = t._params['batch_prob']
@@ -164,9 +176,10 @@ def extract_diff(transforms1, transforms2, crop1, crop2):
             pass
 
         elif isinstance(t1, K.ColorJitter):
-            w1 = _extract_w(t1)
-            w2 = _extract_w(t2)
+            w1, x_means_diff_1 = _extract_w(t1)
+            w2, x_means_diff_2 = _extract_w(t2)
             diff['color'] = w1-w2
+            diff["color_diff"] = x_means_diff_1 - x_means_diff_2
 
         elif isinstance(t1, (nn.Identity, nn.Sequential)):
             pass
@@ -215,8 +228,9 @@ def extract_aug_descriptors(
             pass
 
         elif isinstance(t1, K.ColorJitter):
-            w1 = _extract_w(t1)
+            w1, x_means_batch = _extract_w(t1)
             results['color'] = w1
+            results["color_diff"] = x_means_batch
 
         elif isinstance(t1, (nn.Identity, nn.Sequential)):
             pass

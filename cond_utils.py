@@ -10,7 +10,8 @@ AUG_DESC_SIZE_CONFIG = {
     "blur": 1,
     # "rot": 4,
     # "sol": 1,
-    "grayscale": 1
+    "grayscale": 1,
+    "color_diff": 3
 }
 
 
