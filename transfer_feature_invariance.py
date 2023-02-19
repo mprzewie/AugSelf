@@ -1,40 +1,29 @@
 from argparse import ArgumentParser
 from collections import defaultdict
 from functools import partial
-from copy import deepcopy
 from pathlib import Path
 
+import ignite.distributed as idist
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 import torch.backends.cudnn as cudnn
-
-import ignite.distributed as idist
-import wandb
 from torch import cosine_similarity
 
-from datasets import load_datasets, load_pretrain_datasets_for_cosine_sim
-from models import load_backbone
+from datasets import load_pretrain_datasets_for_cosine_sim
 from resnets import load_backbone_out_blocks
-from trainers import collect_features
 from utils import Logger, get_engine_mock
-
 
 
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
 
-
-    ckpt_parents = set([Path(c).parent for c in args.ckpt])
-    assert len(set(ckpt_parents)) == 1, f"Expected a single checkpoints directory but got {ckpt_parents}"
-    logdir = list(ckpt_parents)[0]
+    logdir = Path(args.ckpt).parent
 
     args.origin_run_name = logdir.name
+
     logger = Logger(
-        logdir=logdir, resume=True, wandb_suffix=f"lin-{args.dataset}", args=args,
+        logdir=logdir, resume=True, wandb_suffix=f"feat_inv-{args.pretrain_data}", args=args,
         job_type="eval_feature_invariance"
 
     )
@@ -52,7 +41,6 @@ def main(local_rank, args):
 
     testloader  = build_dataloader(datasets['test'],  drop_last=False)
     transforms_dict = datasets["transforms"]
-    num_classes = datasets['num_classes']
 
     ckpt_path = args.ckpt
     engine_mock = get_engine_mock(ckpt_path=ckpt_path)
@@ -98,7 +86,7 @@ def main(local_rank, args):
                     ).mean().item()
                     t_name_to_b_name_to_sims[t_name][block_name].append(sim)
 
-                    if (i+1) % 10 == 0:
+                    if (i+1) % args.print_freq == 0:
                         logger.log_msg(
                             f'{i + 1:3d} | {block_name} | {t_name} | {sim:.4f} (mean: {np.mean(t_name_to_b_name_to_sims[t_name][block_name]):.4f})'
                         )
@@ -119,13 +107,13 @@ def main(local_rank, args):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--ckpt', type=str, required=True, nargs="+")
+    parser.add_argument('--ckpt', type=str, required=True)
     parser.add_argument('--pretrain-data', type=str, default='stl10')
     parser.add_argument('--datadir', type=str, default='/data')
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--num-workers', type=int, default=4)
     parser.add_argument('--model', type=str, default='resnet18')
-    parser.add_argument('--print-freq', type=int, default=10)
+    parser.add_argument('--print-freq', type=int, default=100)
     parser.add_argument('--distributed', action='store_true')
     args = parser.parse_args()
     args.backend = 'nccl' if args.distributed else None
