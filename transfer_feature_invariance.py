@@ -64,13 +64,13 @@ def main(local_rank, args):
     )
 
     with torch.no_grad():
-        for i, (X, _) in testloader:
+        for i, (X, _) in enumerate(testloader):
             X_transformed = {
                 t_name: t(X) for (t_name, t) in transforms_dict.items()
             }
             X_norm = X_transformed.pop("normalize")
 
-            bs = X_norm.shape
+            bs = X_norm.shape[0]
 
             feats_norm = backbone(X_norm.to(device))
 
@@ -78,7 +78,7 @@ def main(local_rank, args):
                 feats_t = backbone(X_t.to(device))
                 assert feats_norm.keys() == feats_t.keys()
 
-                for block_name, fn in feats_norm.keys():
+                for block_name, fn in feats_norm.items():
                     ft = feats_t[block_name]
                     sim = cosine_similarity(
                         fn.reshape(bs, -1),
@@ -96,7 +96,7 @@ def main(local_rank, args):
             for block_name, sims in b_name_to_sim.items():
                 mean_sim = np.mean(sims)
                 std_sim = np.std(sims)
-                logger.log_msg(f'invariance of {t_name} to {block_name}: {mean_sim:.4f}±{std_sim:.4f}')
+                logger.log_msg(f'invariance of {block_name} to {t_name}: {mean_sim:.4f}±{std_sim:.4f}')
                 metrics[f"test_feature_invariance/{block_name}/{t_name}"] = mean_sim
 
         logger.log(

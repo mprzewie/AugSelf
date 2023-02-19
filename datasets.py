@@ -465,7 +465,7 @@ def load_pretrain_datasets_for_cosine_sim(
             color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
             grayscale=K.RandomGrayscale(p=1),
             blur=GaussianBlur(9, (0.1, 2.0), p=1),
-            crop=RandomResizedCrop(96, scale=(0.2, 1.0)),
+            crop=K.RandomResizedCrop((96, 96), scale=(0.2, 1.0)),
             normalize=T.Normalize(mean, std),
         )
 
