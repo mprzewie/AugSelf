@@ -427,3 +427,106 @@ def load_fewshot_datasets(dataset='cifar10',
 
     return dict(test=test)
 
+
+def load_pretrain_datasets_for_cosine_sim(
+        dataset='cifar10',
+       datadir='/data',
+       color_aug='default'):
+
+    if dataset == 'imagenet100':
+        mean = torch.tensor([0.485, 0.456, 0.406])
+        std  = torch.tensor([0.229, 0.224, 0.225])
+        test_transform = T.Compose([T.Resize(224),
+                                    T.ToTensor(),
+                                    ])
+        transforms = dict(
+            flip=K.RandomHorizontalFlip(p=1),
+            color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
+            grayscale=K.RandomGrayscale(p=1),
+            blur= GaussianBlur(23, (0.1, 2.0), p=1),
+            crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
+            normalize=T.Normalize(mean, std),
+        )
+
+        testset  = ImageNet100(datadir, split='val', transform=test_transform)
+
+    elif dataset == 'stl10':
+        mean = torch.tensor([0.43, 0.42, 0.39])
+        std  = torch.tensor([0.27, 0.26, 0.27])
+
+        s = 1
+
+        test_transform = T.Compose([T.Resize(96),
+                                    T.ToTensor(),
+                                    ])
+
+        transforms = dict(
+            flip=K.RandomHorizontalFlip(p=1),
+            color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
+            grayscale=K.RandomGrayscale(p=1),
+            blur=GaussianBlur(9, (0.1, 2.0), p=1),
+            crop=RandomResizedCrop(96, scale=(0.2, 1.0)),
+            normalize=T.Normalize(mean, std),
+        )
+
+        testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+
+
+    # elif dataset == 'stl10_rot':
+    #     mean = torch.tensor([0.43, 0.42, 0.39])
+    #     std  = torch.tensor([0.27, 0.26, 0.27])
+    #     train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
+    #     test_transform = T.Compose([T.Resize(96),
+    #                                 T.CenterCrop(96),
+    #                                 T.ToTensor(),
+    #                                 T.Normalize(mean, std)])
+    #     t1 = nn.Sequential(K.RandomHorizontalFlip(),
+    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
+    #                        K.RandomGrayscale(p=0.2),
+    #                        GaussianBlur(9, (0.1, 2.0)),
+    #                        RandomRotation(p=0.5),
+    #                        K.Normalize(mean, std))
+    #     t2 = nn.Sequential(K.RandomHorizontalFlip(),
+    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
+    #                        K.RandomGrayscale(p=0.2),
+    #                        GaussianBlur(9, (0.1, 2.0)),
+    #                        RandomRotation(p=0.5),
+    #                        K.Normalize(mean, std))
+    #
+    #     trainset = STL10(datadir, split='train+unlabeled', transform=train_transform)
+    #     valset   = STL10(datadir, split='train',           transform=test_transform)
+    #     testset  = STL10(datadir, split='test',            transform=test_transform)
+    #
+    # elif dataset == 'stl10_sol':
+    #     mean = torch.tensor([0.43, 0.42, 0.39])
+    #     std  = torch.tensor([0.27, 0.26, 0.27])
+    #     train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
+    #
+    #     test_transform = T.Compose([T.Resize(96),
+    #                                 T.CenterCrop(96),
+    #                                 T.ToTensor(),
+    #                                 T.Normalize(mean, std)])
+    #     t1 = nn.Sequential(K.RandomHorizontalFlip(),
+    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
+    #                        K.RandomSolarize(0.5, 0.0, p=0.5),
+    #                        K.RandomGrayscale(p=0.2),
+    #                        GaussianBlur(9, (0.1, 2.0)),
+    #                        K.Normalize(mean, std))
+    #     t2 = nn.Sequential(K.RandomHorizontalFlip(),
+    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
+    #                        K.RandomSolarize(0.5, 0.0, p=0.5),
+    #                        K.RandomGrayscale(p=0.2),
+    #                        GaussianBlur(9, (0.1, 2.0)),
+    #                        K.Normalize(mean, std))
+    #
+    #     trainset = STL10(datadir, split='train+unlabeled', transform=train_transform, download=True)
+    #     valset   = STL10(datadir, split='train',           transform=test_transform, download=True)
+    #     testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+
+    else:
+        raise Exception(f'Unknown dataset {dataset}')
+
+    return dict(
+        test=testset,
+        transforms=transforms
+    )
