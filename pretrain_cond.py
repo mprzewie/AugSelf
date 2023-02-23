@@ -561,7 +561,7 @@ if __name__ == '__main__':
         with idist.Parallel(
                 'nccl',
                 nproc_per_node=torch.cuda.device_count(),
-
+                master_port=free_port
                 # init_method=f"tcp://0.0.0.0:{free_port}"
         ) as parallel:
             parallel.run(main, args)

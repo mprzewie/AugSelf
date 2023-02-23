@@ -68,7 +68,7 @@ def main(local_rank, args):
             X_transformed = {
                 t_name: t(X) for (t_name, t) in transforms_dict.items()
             }
-            X_norm = X_transformed.pop("normalize")
+            X_norm = X_transformed.pop("identity")
 
             bs = X_norm.shape[0]
 

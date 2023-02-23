@@ -12,6 +12,7 @@ from models import reset_parameters
 class ResnetOutBlocks(ResNet):
     def _forward_impl(self, x: Tensor) -> Dict[str, Tensor]:
         # See note [TorchScript super()]
+        in_x=x
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -27,6 +28,7 @@ class ResnetOutBlocks(ResNet):
         x = self.fc(x)
 
         return dict(
+            input=in_x,
             conv1=conv1_out,
             l1=l1,
             l2=l2,

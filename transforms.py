@@ -1,5 +1,5 @@
 import random
-from typing import Union, Tuple, List
+from typing import Union, Tuple, List, Optional, Dict
 
 import torch
 import torch.nn as nn
@@ -8,6 +8,10 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as F
 import kornia
 import kornia.augmentation as K
+from kornia import adjust_saturation, adjust_hue, pi
+from kornia.augmentation.utils import _transform_input, _validate_input_dtype
+
+
 import kornia.augmentation.functional as KF
 
 
@@ -43,7 +47,7 @@ def apply_adjust_contrast(img1, params):
 
 
 class ColorJitter(K.ColorJitter):
-    def apply_transform(self, x, params):
+    def apply_transform(self, x, params, transform: Optional[torch.Tensor] = None):
         transforms = [
             lambda img: apply_adjust_brightness(img, params),
             lambda img: apply_adjust_contrast(img, params),
@@ -60,7 +64,7 @@ class ColorJitter(K.ColorJitter):
         x_new_means = x_new.mean(dim=[2,3])
         params["x_means_diff"] = (x_means - x_new_means).cpu()
 
-        return x
+        return x_new
 
 
 class GaussianBlur(K.AugmentationBase2D):
@@ -79,7 +83,7 @@ class GaussianBlur(K.AugmentationBase2D):
     def generate_parameters(self, batch_shape):
         return dict(sigma=torch.zeros(batch_shape[0]).uniform_(self.sigma[0], self.sigma[1]))
 
-    def apply_transform(self, input, params):
+    def apply_transform(self, input, params, transform: Optional[torch.Tensor] = None):
         sigma = params['sigma'].to(input.device)
         k_half = self.kernel_size // 2
         x = torch.linspace(-k_half, k_half, steps=self.kernel_size, dtype=input.dtype, device=input.device)
@@ -103,10 +107,15 @@ class RandomRotation(K.AugmentationBase2D):
         degrees = torch.randint(0, 4, (batch_shape[0], ))
         return dict(degrees=degrees)
 
-    def apply_transform(self, input, params):
+    def apply_transform(self, input, params, transform: Optional[torch.Tensor] = None):
         degrees = params['degrees']
         input = torch.stack([torch.rot90(x, k, (1, 2)) for x, k in zip(input, degrees.tolist())], 0)
         return input
+
+
+class KRandomResizedCrop(K.RandomResizedCrop):
+    def apply_transform(self, input: torch.Tensor, params: Dict[str, torch.Tensor]) -> torch.Tensor:
+        return KF.apply_crop(input, params, self.flags)
 
 
 def _extract_w(t):

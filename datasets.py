@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import random_split, ConcatDataset, Subset
 
-from transforms import MultiView, RandomResizedCrop, ColorJitter, GaussianBlur, RandomRotation
+from transforms import MultiView, RandomResizedCrop, ColorJitter, GaussianBlur, RandomRotation, KRandomResizedCrop
 from torchvision import transforms as T
 from torchvision.datasets import STL10, CIFAR10, CIFAR100, ImageFolder, ImageNet, Caltech101, Caltech256, Flowers102, \
     Food101, DTD, OxfordIIITPet, StanfordCars, FGVCAircraft
@@ -436,17 +436,25 @@ def load_pretrain_datasets_for_cosine_sim(
     if dataset == 'imagenet100':
         mean = torch.tensor([0.485, 0.456, 0.406])
         std  = torch.tensor([0.229, 0.224, 0.225])
-        test_transform = T.Compose([T.Resize(224),
-                                    T.ToTensor(),
+        test_transform = T.Compose([
+                T.Resize(224),
+                T.CenterCrop(224,),
+                T.ToTensor(),
                                     ])
         transforms = dict(
             flip=K.RandomHorizontalFlip(p=1),
             color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
             grayscale=K.RandomGrayscale(p=1),
             blur= GaussianBlur(23, (0.1, 2.0), p=1),
-            crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
-            normalize=T.Normalize(mean, std),
+            # crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
+            identity=T.Compose([]),
+            # normalize=T.Normalize(mean, std), #TODO bug?
         )
+
+        transforms = {
+            k: T.Compose([v, T.Normalize(mean, std)])
+            for (k,v) in transforms.items()
+        }
 
         testset  = ImageNet100(datadir, split='val', transform=test_transform)
 
@@ -456,8 +464,10 @@ def load_pretrain_datasets_for_cosine_sim(
 
         s = 1
 
-        test_transform = T.Compose([T.Resize(96),
-                                    T.ToTensor(),
+        test_transform = T.Compose([
+            T.Resize(96),
+            T.CenterCrop(96),
+            T.ToTensor(),
                                     ])
 
         transforms = dict(
