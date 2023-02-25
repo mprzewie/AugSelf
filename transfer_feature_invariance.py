@@ -9,7 +9,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch import cosine_similarity
 
-from datasets import load_pretrain_datasets_for_cosine_sim
+from datasets import load_datasets_for_cosine_sim
 from resnets import load_backbone_out_blocks
 from utils import Logger, get_engine_mock
 
@@ -23,16 +23,19 @@ def main(local_rank, args):
     args.origin_run_name = logdir.name
 
     logger = Logger(
-        logdir=logdir, resume=True, wandb_suffix=f"feat_inv-{args.pretrain_data}", args=args,
+        logdir=logdir, resume=True, wandb_suffix=f"feat_inv-{args.dataset}", args=args,
         job_type="eval_feature_invariance"
 
     )
 
     # DATASETS
 
-    datasets = load_pretrain_datasets_for_cosine_sim(dataset=args.pretrain_data,
-                             datadir=args.datadir,
-                                                     )
+    datasets = load_datasets_for_cosine_sim(
+        dataset=args.dataset,
+        pretrain_data=args.pretrain_data,
+        datadir=args.datadir,
+    )
+
     build_dataloader = partial(idist.auto_dataloader,
                                batch_size=args.batch_size,
                                num_workers=args.num_workers,
@@ -59,7 +62,13 @@ def main(local_rank, args):
     logger.log_msg('collecting features ...')
 
 
-    t_name_to_b_name_to_sims = defaultdict(
+    t_name_to_b_name_to_positive_sims = defaultdict(
+        lambda: defaultdict(list)
+    )
+    t_name_to_b_name_to_negative_sims = defaultdict(
+        lambda: defaultdict(list)
+    )
+    t_name_to_b_name_to_diff_sims = defaultdict(
         lambda: defaultdict(list)
     )
 
@@ -80,24 +89,35 @@ def main(local_rank, args):
 
                 for block_name, fn in feats_norm.items():
                     ft = feats_t[block_name]
-                    sim = cosine_similarity(
-                        fn.reshape(bs, -1),
-                        ft.reshape(bs, -1)
+                    fn_r = fn.reshape(bs, -1)
+                    ft_r = ft.reshape(bs, -1)
+                    positive_sim = cosine_similarity(fn_r, ft_r).mean().item()
+                    negative_sim = cosine_similarity(
+                        fn_r,
+                        torch.flip(ft_r, [0])
                     ).mean().item()
-                    t_name_to_b_name_to_sims[t_name][block_name].append(sim)
+
+                    t_name_to_b_name_to_positive_sims[t_name][block_name].append(positive_sim)
+                    t_name_to_b_name_to_negative_sims[t_name][block_name].append(negative_sim)
+                    t_name_to_b_name_to_diff_sims[t_name][block_name].append(positive_sim - negative_sim)
 
                     if (i+1) % args.print_freq == 0:
                         logger.log_msg(
-                            f'{i + 1:3d} | {block_name} | {t_name} | {sim:.4f} (mean: {np.mean(t_name_to_b_name_to_sims[t_name][block_name]):.4f})'
+                            f'{i + 1:3d} | {block_name} | {t_name} | pos: {np.mean(t_name_to_b_name_to_positive_sims[t_name][block_name]):.4f} | neg: {np.mean(t_name_to_b_name_to_negative_sims[t_name][block_name]):.4f})'
                         )
 
         metrics = dict()
-        for t_name, b_name_to_sim in t_name_to_b_name_to_sims.items():
-            for block_name, sims in b_name_to_sim.items():
-                mean_sim = np.mean(sims)
-                std_sim = np.std(sims)
-                logger.log_msg(f'invariance of {block_name} to {t_name}: {mean_sim:.4f}±{std_sim:.4f}')
-                metrics[f"test_feature_invariance/{block_name}/{t_name}"] = mean_sim
+        for (sim_kind, sim_dict) in [
+            ("positive", t_name_to_b_name_to_positive_sims),
+            ("negative", t_name_to_b_name_to_negative_sims),
+            ("diff", t_name_to_b_name_to_diff_sims)
+        ]:
+            for t_name, b_name_to_sim in sim_dict.items():
+                for block_name, sims in b_name_to_sim.items():
+                    mean_sim = np.mean(sims)
+                    std_sim = np.std(sims)
+                    logger.log_msg(f'{sim_kind} {args.dataset} invariance of {block_name} to {t_name}: {mean_sim:.4f}±{std_sim:.4f}')
+                    metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/{sim_kind}"] = mean_sim
 
         logger.log(
             engine=engine_mock, global_step=i,
@@ -109,6 +129,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--ckpt', type=str, required=True)
     parser.add_argument('--pretrain-data', type=str, default='stl10')
+    parser.add_argument('--dataset', type=str, required=True)
     parser.add_argument('--datadir', type=str, default='/data')
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--num-workers', type=int, default=4)

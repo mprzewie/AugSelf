@@ -428,12 +428,13 @@ def load_fewshot_datasets(dataset='cifar10',
     return dict(test=test)
 
 
-def load_pretrain_datasets_for_cosine_sim(
+def load_datasets_for_cosine_sim(
         dataset='cifar10',
        datadir='/data',
+        pretrain_data="stl10",
        color_aug='default'):
 
-    if dataset == 'imagenet100':
+    if pretrain_data == 'imagenet100':
         mean = torch.tensor([0.485, 0.456, 0.406])
         std  = torch.tensor([0.229, 0.224, 0.225])
         test_transform = T.Compose([
@@ -456,9 +457,9 @@ def load_pretrain_datasets_for_cosine_sim(
             for (k,v) in transforms.items()
         }
 
-        testset  = ImageNet100(datadir, split='val', transform=test_transform)
+        # testset  = ImageNet100(datadir, split='val', transform=test_transform)
 
-    elif dataset == 'stl10':
+    elif pretrain_data == 'stl10':
         mean = torch.tensor([0.43, 0.42, 0.39])
         std  = torch.tensor([0.27, 0.26, 0.27])
 
@@ -478,65 +479,64 @@ def load_pretrain_datasets_for_cosine_sim(
             crop=K.RandomResizedCrop((96, 96), scale=(0.2, 1.0)),
             normalize=T.Normalize(mean, std),
         )
+    else:
+        raise NotImplementedError(pretrain_data)
+        # testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+    if dataset == 'imagenet100':
+        """
+        https://github.com/HobbitLong/CMC/blob/master/imagenet100.txt
+        """
+        test     = ImageNet100(datadir, split='val', transform=test_transform)
 
-        testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+    elif dataset == 'food101':
+        test       = Food101(root=datadir, split='test',  transform=test_transform, download=True)
 
+    elif dataset == 'cifar10':
+        test       = CIFAR10(root=datadir, train=False, transform=test_transform, download=True)
 
-    # elif dataset == 'stl10_rot':
-    #     mean = torch.tensor([0.43, 0.42, 0.39])
-    #     std  = torch.tensor([0.27, 0.26, 0.27])
-    #     train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
-    #     test_transform = T.Compose([T.Resize(96),
-    #                                 T.CenterCrop(96),
-    #                                 T.ToTensor(),
-    #                                 T.Normalize(mean, std)])
-    #     t1 = nn.Sequential(K.RandomHorizontalFlip(),
-    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
-    #                        K.RandomGrayscale(p=0.2),
-    #                        GaussianBlur(9, (0.1, 2.0)),
-    #                        RandomRotation(p=0.5),
-    #                        K.Normalize(mean, std))
-    #     t2 = nn.Sequential(K.RandomHorizontalFlip(),
-    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
-    #                        K.RandomGrayscale(p=0.2),
-    #                        GaussianBlur(9, (0.1, 2.0)),
-    #                        RandomRotation(p=0.5),
-    #                        K.Normalize(mean, std))
-    #
-    #     trainset = STL10(datadir, split='train+unlabeled', transform=train_transform)
-    #     valset   = STL10(datadir, split='train',           transform=test_transform)
-    #     testset  = STL10(datadir, split='test',            transform=test_transform)
-    #
-    # elif dataset == 'stl10_sol':
-    #     mean = torch.tensor([0.43, 0.42, 0.39])
-    #     std  = torch.tensor([0.27, 0.26, 0.27])
-    #     train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
-    #
-    #     test_transform = T.Compose([T.Resize(96),
-    #                                 T.CenterCrop(96),
-    #                                 T.ToTensor(),
-    #                                 T.Normalize(mean, std)])
-    #     t1 = nn.Sequential(K.RandomHorizontalFlip(),
-    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
-    #                        K.RandomSolarize(0.5, 0.0, p=0.5),
-    #                        K.RandomGrayscale(p=0.2),
-    #                        GaussianBlur(9, (0.1, 2.0)),
-    #                        K.Normalize(mean, std))
-    #     t2 = nn.Sequential(K.RandomHorizontalFlip(),
-    #                        ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8),
-    #                        K.RandomSolarize(0.5, 0.0, p=0.5),
-    #                        K.RandomGrayscale(p=0.2),
-    #                        GaussianBlur(9, (0.1, 2.0)),
-    #                        K.Normalize(mean, std))
-    #
-    #     trainset = STL10(datadir, split='train+unlabeled', transform=train_transform, download=True)
-    #     valset   = STL10(datadir, split='train',           transform=test_transform, download=True)
-    #     testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+    elif dataset == 'cifar100':
+        test       = CIFAR100(root=datadir, train=False, transform=test_transform, download=True)
+
+    elif dataset == 'sun397':
+        test     = SUN397(root=datadir, split='Testing',  transform=test_transform)
+
+    elif dataset == 'dtd':
+        test     = DTD(root=datadir, split='test',  transform=test_transform, download=True)
+
+    elif dataset == 'pets':
+        test       = OxfordIIITPet(root=datadir, split='test',     transform=test_transform, download=True)
+
+    elif dataset == 'caltech101':
+        test_transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
+        D = Caltech101(datadir, transform=test_transform, download=True)
+        trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
+        test     = Subset(D, tst_indices)
+
+    elif dataset == 'flowers':
+        test = Flowers102(datadir, split="test", transform=test_transform, download=True)
+
+    elif dataset == 'stl10':
+        test = STL10(root=datadir, split='test',  transform=test_transform, download=True)
+
+    elif dataset == 'mit67':
+        """
+        https://www.kaggle.com/datasets/itsahmad/indoor-scenes-cvpr-2019
+        """
+        test     = ImageFolder(os.path.join(datadir, 'test'),  transform=test_transform)
+
+    elif dataset == 'cub200':
+        test     = ImageFolder(os.path.join(datadir, 'test'),  transform=test_transform)
+
+    elif dataset == 'cars':
+        test =  StanfordCars(datadir, "test", transform=test_transform, download=True)
+
+    elif dataset == 'aircraft':
+        test =  FGVCAircraft(datadir, "test", transform=test_transform, download=True)
 
     else:
         raise Exception(f'Unknown dataset {dataset}')
 
     return dict(
-        test=testset,
+        test=test,
         transforms=transforms
     )
