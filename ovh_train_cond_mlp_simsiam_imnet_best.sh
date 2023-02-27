@@ -22,7 +22,7 @@ SEED=1997
 EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_cond"
 OUT_DIR="${RES_DIR}${EXP_NAME}"
 
-CUDA="0,1"
+CUDA="0,1,2"
 #nvidia-smi
 
 cd "${SRC_DIR}"
@@ -36,13 +36,13 @@ do
   do
     for AUG_NN_WIDTH in 16;
     do
-      for CUR_LR in 0.05 0.03;
+      for CUR_LR in 0.05;
       do
         for AUG_INJ in "proj-cat"
         do
           {
-            EXTRA_ARGS="--aug-cond crop color --base-lr ${CUR_LR} --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16 --distributed"
-            SUFFIX="crop_color_best_${CUR_LR}"
+            EXTRA_ARGS="--aug-cond crop color --base-lr ${CUR_LR} --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16"
+            SUFFIX="crop_color_3lays"
             source "${SRC_DIR}single_experiment.sh"
           }
         done
