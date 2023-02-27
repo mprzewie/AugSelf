@@ -16,7 +16,7 @@ from ignite.engine import Events
 import ignite.distributed as idist
 
 from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES, \
-    AUG_INJECTION_TYPES
+    AUG_INJECTION_TYPES, AugSSPredictor
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
@@ -61,11 +61,18 @@ def simsiam(args, t1, t2):
             proj_depth=2+int(args.dataset.startswith('imagenet')),
         )
     )
-    predictor    = build_model(load_mlp(out_dim,
-                                        out_dim // 4,
-                                        out_dim,
-                                        num_layers=2,
-                                        last_bn=False))
+    predictor    = build_model(
+        # load_mlp(out_dim,
+        # out_dim // 4,
+        # out_dim,
+        # num_layers=2,
+        # last_bn=False)
+        AugSSPredictor(
+            args,
+            out_dim=out_dim,
+            predictor_depth=2
+        )
+    )
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
@@ -516,6 +523,19 @@ if __name__ == '__main__':
 
         ],
         help="How to inject raw or mlp-processed aug vectors. Used only if aug-treatment==mlp and in some cases for raw."
+    )
+
+    parser.add_argument(
+        "--ss-aug-inj-type", type=str, default=AUG_INJECTION_TYPES.proj_none,
+        choices=[
+            AUG_INJECTION_TYPES.proj_cat,
+            AUG_INJECTION_TYPES.proj_add,
+            AUG_INJECTION_TYPES.proj_mul,
+            AUG_INJECTION_TYPES.img_cat,
+            AUG_INJECTION_TYPES.proj_none,
+
+        ],
+        help="How to inject raw or mlp-processed aug vectors into SimSiam predictor."
     )
 
     parser.add_argument(

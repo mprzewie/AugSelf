@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from ignite.engine import Engine
 import ignite.distributed as idist
 
-from cond_utils import AugProjector, AUG_DESC_TYPES, AUG_STRATEGY
+from cond_utils import AugProjector, AUG_DESC_TYPES, AUG_STRATEGY, AugSSPredictor
 from models import load_mlp
 from trainers import SSObjective
 from transforms import extract_aug_descriptors, extract_diff
@@ -35,7 +35,7 @@ def prepare_training_batch(batch, t1, t2, device) -> Tuple[
 
 def simsiam(backbone,
             projector: AugProjector,
-            predictor,
+            predictor: AugSSPredictor,
             ss_predictor: Dict[str, nn.Module],
             t1,
             t2,
@@ -62,8 +62,8 @@ def simsiam(backbone,
         if True:  # not ss_objective.only:
             z1 = projector(y1, d1_cat)
             z2 = projector(y2, d2_cat)
-            p1 = predictor(z1)
-            p2 = predictor(z2)
+            p1 = predictor(z1, d1_cat)
+            p2 = predictor(z2, d2_cat)
             loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
             loss2 = F.cosine_similarity(p2, z1.detach(), dim=-1).mean().mul(-1)
             loss = (loss1 + loss2).mul(0.5)
