@@ -4,6 +4,7 @@ OUT_DIR="${RES_DIR}${EXP_NAME}"
 
 CUDA_VISIBLE_DEVICES=$CUDA python pretrain_cond.py \
           --logdir $OUT_DIR \
+          --resume $RESUME \
           --framework $FRAMEWORK \
           --dataset $PRETRAIN_DATASET \
           --datadir ${datadirs["$PRETRAIN_DATASET"]} \

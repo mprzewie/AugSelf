@@ -43,6 +43,7 @@ do
           {
             EXTRA_ARGS="--aug-cond crop color --base-lr ${CUR_LR} --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16 --distributed"
             SUFFIX="crop_color"
+            RESUME=500
             source "${SRC_DIR}single_experiment.sh"
           }
         done
