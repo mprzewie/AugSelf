@@ -66,7 +66,7 @@ def simsiam(args, t1, t2):
         AugProjector(
             args,
             proj_out_dim=out_dim,
-            proj_depth=2,
+            proj_depth=2+int(args.dataset.startswith('imagenet')),
         )
     )
     
@@ -205,7 +205,7 @@ def simclr(args, t1, t2):
         AugProjector(
             args,
             proj_out_dim=out_dim,
-            proj_depth=2,
+            proj_depth=2+int(args.dataset.startswith('imagenet')),
         )
     )
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
