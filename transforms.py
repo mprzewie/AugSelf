@@ -1,4 +1,5 @@
 import random
+from typing import Union, Tuple, List, Optional, Dict
 import torch
 import torch.nn as nn
 import torch.nn.functional as NF
@@ -6,6 +7,8 @@ import torchvision.transforms as T
 import torchvision.transforms.functional as F
 import kornia
 import kornia.augmentation as K
+from kornia import adjust_saturation, adjust_hue, pi
+from kornia.augmentation.utils import _transform_input, _validate_input_dtype
 import kornia.augmentation.functional as KF
 
 
@@ -41,7 +44,7 @@ def apply_adjust_contrast(img1, params):
 
 
 class ColorJitter(K.ColorJitter):
-    def apply_transform(self, x, params):
+    def apply_transform(self, x, params, transform: Optional[torch.Tensor] = None):
         transforms = [
             lambda img: apply_adjust_brightness(img, params),
             lambda img: apply_adjust_contrast(img, params),
@@ -49,11 +52,16 @@ class ColorJitter(K.ColorJitter):
             lambda img: KF.apply_adjust_hue(img, params)
         ]
 
+        x_new = x
         for idx in params['order'].tolist():
             t = transforms[idx]
-            x = t(x)
+            x_new = t(x_new)
 
-        return x
+        x_means = x.mean(dim=[2,3])
+        x_new_means = x_new.mean(dim=[2,3])
+        params["x_means_diff"] = (x_means - x_new_means).cpu() #TODO
+
+        return x_new
 
 
 class GaussianBlur(K.AugmentationBase2D):
@@ -72,7 +80,7 @@ class GaussianBlur(K.AugmentationBase2D):
     def generate_parameters(self, batch_shape):
         return dict(sigma=torch.zeros(batch_shape[0]).uniform_(self.sigma[0], self.sigma[1]))
 
-    def apply_transform(self, input, params):
+    def apply_transform(self, input, params, transform: Optional[torch.Tensor] = None):
         sigma = params['sigma'].to(input.device)
         k_half = self.kernel_size // 2
         x = torch.linspace(-k_half, k_half, steps=self.kernel_size, dtype=input.dtype, device=input.device)
@@ -96,10 +104,14 @@ class RandomRotation(K.AugmentationBase2D):
         degrees = torch.randint(0, 4, (batch_shape[0], ))
         return dict(degrees=degrees)
 
-    def apply_transform(self, input, params):
+    def apply_transform(self, input, params, transform: Optional[torch.Tensor] = None):
         degrees = params['degrees']
         input = torch.stack([torch.rot90(x, k, (1, 2)) for x, k in zip(input, degrees.tolist())], 0)
         return input
+
+class KRandomResizedCrop(K.RandomResizedCrop):
+    def apply_transform(self, input: torch.Tensor, params: Dict[str, torch.Tensor]) -> torch.Tensor:
+        return KF.apply_crop(input, params, self.flags)
 
 
 def _extract_w(t):
@@ -107,7 +119,12 @@ def _extract_w(t):
         m = t._params['batch_prob']
         w = torch.zeros(m.shape[0], 1)
         w[m] = t._params['sigma'].unsqueeze(-1)
-        return w
+        
+        x_means_diff = t._params["x_means_diff"]
+        x_means_batch = torch.zeros(to_apply.shape[0], x_means_diff.shape[1])
+        x_means_batch[to_apply] = x_means_diff
+
+        return w, x_means_batch
 
     elif isinstance(t, ColorJitter):
         to_apply = t._params['batch_prob']
@@ -164,8 +181,8 @@ def extract_diff(transforms1, transforms2, crop1, crop2):
             pass
 
         elif isinstance(t1, K.ColorJitter):
-            w1 = _extract_w(t1)
-            w2 = _extract_w(t2)
+            w1, x_means_diff_1 = _extract_w(t1)
+            w2, x_means_diff_2 = _extract_w(t2)
             diff['color'] = w1-w2
 
         elif isinstance(t1, (nn.Identity, nn.Sequential)):
@@ -216,7 +233,7 @@ def extract_aug_descriptors(
 
         elif isinstance(t1, K.ColorJitter):
             w1 = _extract_w(t1)
-            results['color'] = w1
+            results['color'], x_means_batch = w1
 
         elif isinstance(t1, (nn.Identity, nn.Sequential)):
             pass
