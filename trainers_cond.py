@@ -181,14 +181,15 @@ def moco(backbone,
 
 
 def simclr(backbone,
-           projector,
-           ss_predictor,
+           projector: AugProjector,
+           ss_predictor: Dict[str, nn.Module],
            t1,
            t2,
            optimizers,
            device,
-           ss_objective,
-           T=0.2,
+           ss_objective: SSObjective,
+           aug_cond: List[str],
+           T: float=0.2,
            ):
     def training_step(engine, batch):
         backbone.train()
@@ -197,11 +198,15 @@ def simclr(backbone,
         for o in optimizers:
             o.zero_grad()
 
-        x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
+        (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
+        aug_keys = sorted(aug_cond)
+        d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
+
         y1 = backbone(x1)
         y2 = backbone(x2)
-        z1 = F.normalize(projector(y1))
-        z2 = F.normalize(projector(y2))
+        z1 = F.normalize(projector(y1, d1_cat))
+        z2 = F.normalize(projector(y2, d2_cat))
 
         z = torch.cat([z1, z2], 0)
         scores = torch.einsum('ik, jk -> ij', z, z).div(T)
@@ -214,7 +219,7 @@ def simclr(backbone,
         loss = F.cross_entropy(scores, labels)
         outputs = dict(loss=loss, z1=z1, z2=z2)
 
-        ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
+        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
         (loss + ss_losses['total']).backward()
         for k, v in ss_losses.items():
             outputs[f'ss/{k}'] = v
