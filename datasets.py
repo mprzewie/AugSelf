@@ -557,15 +557,15 @@ def load_datasets_for_augm_interpolation(
                                     ])
         standard_transforms = dict(
             #flip=K.RandomHorizontalFlip(p=1),
-            color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
+            #color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
             #grayscale=K.RandomGrayscale(p=1),
-            #blur= GaussianBlur(23, (0.1, 2.0), p=1),
+            blur= GaussianBlur(23, [0.1, 2.0], p=1),
             identity=T.Compose([]),
         )
 
         transforms = dict()
 
-        if augmentation == "colorjitter":
+        if augmentation in ["colorjitter", "blur"]:
             for (k,v) in standard_transforms.items():
                 modified = v
                 if k == "color":
@@ -575,7 +575,13 @@ def load_datasets_for_augm_interpolation(
                         modified.saturation = (i/8) * v.saturation
                         modified.hue = (i/8) * v.hue
                         transforms[f'color_{i}'] = T.Compose([modified, T.Normalize(mean, std)])
-                else:
+                elif k == "blur":
+                    for i in range(1,9):
+                        #modified.sigma = (i/8) * v.sigma
+                        for j in range(len(modified.sigma)):
+                            modified.sigma[j] = (i/8) * v.sigma[j]
+                        transforms[f'blur_{i}'] = T.Compose([modified, T.Normalize(mean, std)])
+                elif k=="identity":
                     transforms[k] = v
         # else TODO
 
