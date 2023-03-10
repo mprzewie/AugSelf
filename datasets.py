@@ -545,7 +545,7 @@ def load_datasets_for_augm_interpolation(
         dataset='cifar10',
         datadir='/data',
         pretrain_data="stl10",
-        augmentation='rotation'):
+        augmentation='colorjitter'):
 
     if pretrain_data == 'imagenet100':
         mean = torch.tensor([0.485, 0.456, 0.406])
@@ -555,20 +555,34 @@ def load_datasets_for_augm_interpolation(
                 T.CenterCrop(224,),
                 T.ToTensor(),
                                     ])
-        transforms = dict(
-            flip=K.RandomHorizontalFlip(p=1),
+        standard_transforms = dict(
+            #flip=K.RandomHorizontalFlip(p=1),
             color=ColorJitter(0.4, 0.4, 0.4, 0.1, p=1),
-            grayscale=K.RandomGrayscale(p=1),
-            blur= GaussianBlur(23, (0.1, 2.0), p=1),
-            # crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
+            #grayscale=K.RandomGrayscale(p=1),
+            #blur= GaussianBlur(23, (0.1, 2.0), p=1),
             identity=T.Compose([]),
-            # normalize=T.Normalize(mean, std), #TODO bug?
         )
 
-        transforms = {
-            k: T.Compose([v, T.Normalize(mean, std)])
-            for (k,v) in transforms.items()
-        }
+        transforms = dict()
+
+        if augmentation == "colorjitter":
+            for (k,v) in standard_transforms.items():
+                modified = v
+                if k == "color":
+                    for i in range(1,9):
+                        modified.brightness = (i/8) * v.brightness
+                        modified.contrast = (i/8) * v.contrast
+                        modified.saturation = (i/8) * v.saturation
+                        modified.hue = (i/8) * v.hue
+                        transforms[f'color_{i}'] = T.Compose([modified, T.Normalize(mean, std)])
+                else:
+                    transforms[k] = v
+        # else TODO
+
+        #transforms = {
+        #    k: T.Compose([v, T.Normalize(mean, std)])
+        #    for (k,v) in transforms.items()
+        #}
 
         # testset  = ImageNet100(datadir, split='val', transform=test_transform)
 
