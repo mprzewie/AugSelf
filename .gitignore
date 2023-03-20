@@ -5,3 +5,9 @@ logs/
 data/
 AugSelf_checkpoints/
 slurm-*.out
+
+.ipynb_checkpoints
+
+*.pth
+*.pkl
+datasets/
