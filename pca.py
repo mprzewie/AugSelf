@@ -2,17 +2,22 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
-class PCA:
-    def __init__(self, Data):
+class All_PCA:
+    def __init__(self, Data, type='deterministic'):
+        '''
+        deterministic | truncated | probabilistic
+        '''
         self.Data = Data
+        self.type = type
     
     def __repr__(self):
         return f'PCA({self.Data})'
     
-    def center(self):
+    @staticmethod
+    def center(Data):
         #Convert to torch Tensor and keep the number of rows and columns
         # t = torch.from_numpy(self.Data)
-        t = self.Data
+        t = Data
         no_rows, no_columns = t.size()
         row_means = torch.mean(t, 1)
         #Expand the matrix in order to have the same shape as X and substract, to center
@@ -21,15 +26,19 @@ class PCA:
         #X = t - for_subtraction #centered
         return X
 
-    def decomposition(self, k):
-        X = self.center()
-        U,S,V = torch.svd(X)
+    @classmethod
+    def decomposition(cls, Data, k, type='deterministic'):
+        X = cls.center(Data)
+        if type == 'deterministic':
+            U,S,V = torch.svd(X)
+        elif type == 'truncated':
+            U,S,V = torch.svd_lowrank(X, q = np.sqrt(len(X[0])))
         eigvecs = U.t()[:,:k] #the first k vectors will be kept
         y = torch.mm(U,eigvecs)
 
         #Save variables to the class object, the eigenpair and the centered data
-        self.eigenpair = (eigvecs, S)
-        self.centred_data=X
+        cls.eigenpair = (eigvecs, S)
+        cls.centred_data=X
         return y
 
     def explained_variance(self):
@@ -39,7 +48,7 @@ class PCA:
         var_exp = [(i / tot) for i in sorted(self.eigenpair[1], reverse=True)]
         cum_var_exp = np.cumsum(var_exp)
         #X is the centered data
-        X = self.centred_data
+        X = All_PCA.Data
         #Plot both the individual variance explained and the cumulative:
         plt.bar(range(X.size()[1]), var_exp, alpha=0.5, align='center', label='individual explained variance')
         plt.step(range(X.size()[1]), cum_var_exp, where='mid', label='cumulative explained variance')
@@ -48,45 +57,50 @@ class PCA:
         plt.legend(loc='best')
         plt.show()
 
-"""
-def KPCA(X, gamma=3, dims=1, mode='gaussian'):
-	print('Now running Kernel PCA with', mode, 'kernel function...')
-	'''
-	X is the necessary input. The data.
-	gamma will be the user defined value that will be used in the kernel functions. The default is 3.
-	dims will be the number of dimensions of the final output (basically the number of components to be picked). The default is 1.
-	mode has three options 'gaussian', 'polynomial', 'hyperbolic tangent' which will be the kernel function to be used. The default is gaussian.
-	'''
+def Kernel_PCA(X, gamma=3, dims=1, mode='gaussian'):
+    '''
+    X is the necessary input. The data.
+    gamma will be the user defined value that will be used in the kernel functions. The default is 3.
+    dims will be the number of dimensions of the final output (basically the number of components to be picked). The default is 1.
+    mode has three options 'gaussian', 'polynomial', 'hyperbolic tangent' which will be the kernel function to be used. The default is gaussian.
+    '''
 
-	#First the kernel function picked by the user is defined. Vectors need to be input in np.mat type
+    print('Now running Kernel PCA with', mode, 'kernel function...')
 
-	def phi(x1,x2):
-		if mode == 'gaussian':
-			return (float(np.exp(-gamma*((x1-x2).dot((x1-x2).T))))) #gaussian. (vectors are rather inconvenient in python, so instead of xTx for inner product we need to calculate xxT)
-		if mode == 'polynomial':
-			return (float((1 + x1.dot(x2.T))**gamma)) #polynomial
-		if mode == 'hyperbolic tangent':
-			return (float(np.tanh(x1.dot(x2.T) + gamma))) #hyperbolic tangent
-	Kernel=[]
-	for x in X.T:
-		xi=np.mat(x)
-		row=[]
-		for y in X.T:
-			xj=np.mat(y)
-			kf=phi(xi,xj)
-			row.append(kf)
-		Kernel.append(row)
-	kernel=np.array(Kernel)
+    #First the kernel function picked by the user is defined. Vectors need to be input in np.mat type
 
-	# Centering the symmetric NxN kernel matrix.
-	N = kernel.shape[0]
-	one_n = np.ones((N,N)) / N
-	kernel = kernel - one_n.dot(kernel) - kernel.dot(one_n) + one_n.dot(kernel).dot(one_n) #centering
+    def phi(x1,x2):
+        if mode == 'gaussian':
+            return (float(np.exp(-gamma*((x1-x2).dot((x1-x2).T))))) #gaussian. (vectors are rather inconvenient in python, so instead of xTx for inner product we need to calculate xxT)
+        if mode == 'polynomial':
+            return (float((1 + x1.dot(x2.T))**gamma)) #polynomial
+        if mode == 'hyperbolic tangent':
+            return (float(np.tanh(x1.dot(x2.T) + gamma))) #hyperbolic tangent
+    
+    Kernel=[]
+    for x in X.T:
+        xi=np.mat(x)
+        row=[]
+        for y in X.T:
+            xj=np.mat(y)
+            kf=phi(xi,xj)
+            row.append(kf)
+        Kernel.append(row)
+    kernel=np.array(Kernel)
 
-	eigVals, eigVecs = np.linalg.eigh(kernel) #the eigvecs are sorted in ascending eigenvalue order.
-	y=eigVecs[:,-dims:].T #user defined dims, since the order is reversed, we pick principal components from the last columns instead of the first
-	return (y)
-"""
+    # Centering the symmetric NxN kernel matrix.
+    N = kernel.shape[0]
+    one_n = np.ones((N,N)) / N
+    kernel = kernel - one_n.dot(kernel) - kernel.dot(one_n) + one_n.dot(kernel).dot(one_n) #centering
+
+    eigVals, eigVecs = np.linalg.eigh(kernel) #the eigvecs are sorted in ascending eigenvalue order.
+    y=eigVecs[:,-dims:].T #user defined dims, since the order is reversed, we pick principal components from the last columns instead of the first
+    return (y)
+
+#TODO
+class Probabilistic_PCA():
+    def __init__(self) -> None:
+        pass
 
 from sklearn.manifold import TSNE
 from sklearn import manifold
@@ -177,24 +191,36 @@ def main(local_rank, args):
                     ft = feats_t[block_name]
                     ft_r = ft.reshape(bs, -1)
 
-                    #PCA
+                    # selection
+                    if block_name != "out":
+                        continue
 
-                    pca_t = PCA(ft_r)
-                    pca_t.decomposition(args.k)
+                    # PCA
 
-                    tot = sum(pca_t.eigenpair[1])
-                    #Variance explained by each principal component
-                    var_exp = [(i / tot) for i in sorted(pca_t.eigenpair[1], reverse=True)]
+                    if args.buildin:
+                        print("--sklearn PCA")
+                        pca_t = PCAklearn(n_components=args.k)
+                        pca_t.fit(X)
+                        var_exp = pca_t.explained_variance_ratio_
+                        tot = sum(var_exp)
+                    else:
+                        print(f"--SVD based PCA {args.pca_type}")
+                        pca = All_PCA(ft_r, type=args.pca_type)
+                        pca.decomposition(ft_r, args.k, type=args.pca_type)
+                        tot = sum(pca_t.eigenpair[1])
+                        #Variance explained by each principal component
+                        var_exp = [(i / tot) for i in sorted(pca_t.eigenpair[1], reverse=True)]
+
                     cum_var_exp = np.cumsum(var_exp)
-                    #X is the centered data
-                    X = pca_t.data
+                    
                     #Plot both the individual variance explained and the cumulative:
-                    plt.bar(range(X.size()[1]), var_exp, alpha=0.5, align='center', label='individual explained variance')
-                    plt.step(range(X.size()[1]), cum_var_exp, where='mid', label='cumulative explained variance')
+                    plt.bar(range(len(var_exp)), var_exp, alpha=0.5, align='center', label='individual explained variance')
+                    plt.step(range(len(cum_var_exp)), cum_var_exp, where='mid', label='cumulative explained variance')
                     plt.ylabel('Explained variance ratio')
                     plt.xlabel('Principal components')
                     plt.legend(loc='best')
-                    logger.log({f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt})
+                    # logger.log(engine=engine_mock, global_step=i, pca={f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt}) #TODO
+                    # logger.log({f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt})
                     plt.savefig(f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}.png")
 
                     logger.log_msg(f'variance explainability is {cum_var_exp[-1]}')
@@ -217,11 +243,13 @@ if __name__ == '__main__':
     parser.add_argument('--pretrain-data', type=str, default='imagenet100')
     parser.add_argument('--dataset', type=str, required=True)
     parser.add_argument('--datadir', type=str, default='/data')
-    parser.add_argument('--batch-size', type=int, default=500)
-    parser.add_argument('--num-workers', type=int, default=8)
+    parser.add_argument('--batch-size', type=int, default=1000)
+    parser.add_argument('--num-workers', type=int, default=0)
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--print-freq', type=int, default=100)
     parser.add_argument('--distributed', action='store_true')
+    parser.add_argument('--buildin', action='store_true')
+    parser.add_argument('--pca_type', type=str, default='deterministic')
     parser.add_argument('--k', type=int, default=32)
     args = parser.parse_args()
     args.backend = 'nccl' if args.distributed else None
