@@ -24,7 +24,7 @@ def main(local_rank, args):
     args.origin_run_name = logdir.name
 
     logger = Logger(
-        logdir=logdir, resume=True, wandb_suffix=f"feat_nn-{args.dataset}", args=args,
+        logdir=logdir, resume=True, wandb_suffix=f"feat_nn-{args.dataset}-{args.nn_metric}", args=args,
         job_type="eval_nearest_neighbors"
 
     )
