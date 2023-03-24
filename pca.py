@@ -192,7 +192,7 @@ def main(local_rank, args):
                     ft_r = ft.reshape(bs, -1)
 
                     # selection
-                    if block_name != "out":
+                    if block_name not in ["l4", "out"]:
                         continue
 
                     # PCA
@@ -200,7 +200,7 @@ def main(local_rank, args):
                     if args.buildin:
                         print("--sklearn PCA")
                         pca_t = PCAklearn(n_components=args.k)
-                        pca_t.fit(X)
+                        pca_t.fit(ft_r)
                         var_exp = pca_t.explained_variance_ratio_
                         tot = sum(var_exp)
                     else:
@@ -214,14 +214,17 @@ def main(local_rank, args):
                     cum_var_exp = np.cumsum(var_exp)
                     
                     #Plot both the individual variance explained and the cumulative:
+                    plt.clf()
                     plt.bar(range(len(var_exp)), var_exp, alpha=0.5, align='center', label='individual explained variance')
                     plt.step(range(len(cum_var_exp)), cum_var_exp, where='mid', label='cumulative explained variance')
                     plt.ylabel('Explained variance ratio')
                     plt.xlabel('Principal components')
                     plt.legend(loc='best')
+                    plt.title(f"PCA {t_name} {block_name} expl {tot}")
                     # logger.log(engine=engine_mock, global_step=i, pca={f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt}) #TODO
                     # logger.log({f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt})
-                    plt.savefig(f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}.png")
+                    p = "/home/pyla/contrastive/AugSelfHelper/pca/moco/augself"
+                    plt.savefig(f"{p}/feature_pca_{args.dataset}_{t_name}_{block_name}_{i}.png")
 
                     logger.log_msg(f'variance explainability is {cum_var_exp[-1]}')
                     metrics[f"feature_pca/{args.dataset}/{t_name}/{block_name}/{i}"] = cum_var_exp[-1]
