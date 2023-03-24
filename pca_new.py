@@ -167,13 +167,16 @@ def main(local_rank, args):
 
                 for block_name, fn in feats_norm.items():
                     ft = feats_t[block_name]
-                    ft_r = ft.reshape(bs, -1)
+                    ft_r = ft.reshape(bs, -1).detach().cpu().numpy()
 
                     # selection
-                    if block_name not in ["l4", "out"]:
+                    if block_name not in ["out"]: # "l4", 
                         continue
 
                     # PCA
+
+                    possible = ["sklearn", "randomised", "svd", "truncated", "rankk", "kernel", "cov"]
+
                     if args.pca_type == "sklearn":
                         var_exp, tot = pca_sklearn(ft_r, args.k)
                     elif args.pca_type == "randomised":
@@ -182,10 +185,12 @@ def main(local_rank, args):
                         var_exp, tot = pca_svd(ft_r, args.k, args.full_matrices)
                     elif args.pca_type == "truncated":
                         var_exp, tot = pca_truncated(ft_r, args.k, args.full_matrices)
-                    elif args.pca_type == "sklearn":
+                    elif args.pca_type == "rankk":
                         var_exp, tot = pca_rankk(ft_r, args.k, args.full_matrices)
-                    elif args.pca_tye == "kernel":
+                    elif args.pca_type == "kernel":
                         var_exp, tot = pca_kernel(ft_r, args.k, args.pca_kernel)
+                    elif args.pca_type == "cov":
+                        var_exp, tot = pca_cov(ft_r, args.k)
 
                     cum_var_exp = np.cumsum(var_exp)
                     
@@ -199,7 +204,7 @@ def main(local_rank, args):
                     plt.title(f"PCA {args.pca_type} {t_name} {block_name} expl {tot}")
                     # logger.log(engine=engine_mock, global_step=i, pca={f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt}) #TODO
                     # logger.log({f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}": plt})
-                    plt.savefig(f"feature_pca_{args.dataset}_{t_name}_{block_name}_{i}.png")
+                    plt.savefig(f"pca/feature_pca_{args.pca_type}_{args.dataset}_{t_name}_{block_name}_{i}.png")
 
                     logger.log_msg(f'variance explainability is {cum_var_exp[-1]}')
                     metrics[f"feature_pca/{args.dataset}/{t_name}/{block_name}/{i}"] = cum_var_exp[-1]
@@ -226,7 +231,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--print-freq', type=int, default=100)
     parser.add_argument('--distributed', action='store_true')
-    parser.add_argument('--pca_type', type=str, default='sklearn')
+    parser.add_argument('--pca-type', type=str, default='sklearn')
     parser.add_argument('--full-matrices', action='store_true')
     parser.add_argument('--no-full-matrices', dest='full-matrices', action='store_false')
     parser.add_argument('--pca-kernel', type=str, default='gaussian')
