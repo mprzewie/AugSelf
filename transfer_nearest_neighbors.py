@@ -10,10 +10,15 @@ import torch.backends.cudnn as cudnn
 import wandb
 from sklearn.neighbors import NearestNeighbors
 
+import io
+import matplotlib.pyplot as plt
 from datasets import load_datasets_for_cosine_sim
 from resnets import load_backbone_out_blocks
 from utils import Logger, get_engine_mock
-
+import pickle as pkl
+from PIL import Image
+from torchvision.datasets import ImageFolder
+from torch.utils.data import ConcatDataset
 
 def main(local_rank, args):
     cudnn.benchmark = True
@@ -80,6 +85,7 @@ def main(local_rank, args):
             latents.append(feats_norm)
 
     latents = np.concatenate(latents)
+    
 
     nn = NearestNeighbors(
         n_neighbors=args.n_neighbors,
@@ -93,14 +99,33 @@ def main(local_rank, args):
     )
 
     for i, nn_indices in enumerate(query_nns):
-        query_img = dataset_test_no_transforms[i]
-        result_imgs = [dataset_test_no_transforms[n] for n in nn_indices]
-        wandb.log(
-            {
-                f"query_{i}": [wandb.Image(query_img)],
-                f"results_{i}": [wandb.Image(r) for r in result_imgs]
-            }
-        )
+        fig, ax = plt.subplots(ncols=len(nn_indices), figsize=(2*len(nn_indices), 2))
+        [a.axis("off") for a in ax]
+        
+        for r, n in enumerate(nn_indices):
+            img = dataset_test_no_transforms[n][0]
+            ax[r].imshow(img)
+            if r==0:
+                ax[r].set_title("Query")
+            else:
+                ax[r].set_title(f"Result #{r}: {n}")
+            
+        img_buf = io.BytesIO()
+        fig.savefig(img_buf, format='png')
+        plt_im = Image.open(img_buf)
+        
+        if wandb.run is not None:
+            wandb.log(
+                {
+                    f"test_nn/{args.dataset}/{i}": wandb.Image(plt_im)
+                }
+            )
+    
+    if args.dump_latents:
+        with (logdir / f"latents-test-{args.dataset}.pkl").open("wb") as f:
+            pkl.dump(latents, f)
+
+        print("Dumped latents in", f"latents-test-{args.dataset}.pkl")
 
 
 if __name__ == '__main__':
@@ -117,6 +142,7 @@ if __name__ == '__main__':
     parser.add_argument("--n-neighbors", type=int, default=5)
     parser.add_argument("--n-queries", type=int, default=10)
     parser.add_argument("--nn-metric", type=str, default="cosine", choices=sklearn.metrics.pairwise.distance_metrics())
+    parser.add_argument("--dump-latents", action="store_true", default=False)
     args = parser.parse_args()
     args.backend = 'nccl' if args.distributed else None
     args.num_backbone_features = 512 if args.model.endswith('resnet18') else 2048
