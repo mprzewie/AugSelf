@@ -119,12 +119,7 @@ def _extract_w(t):
         m = t._params['batch_prob']
         w = torch.zeros(m.shape[0], 1)
         w[m] = t._params['sigma'].unsqueeze(-1)
-        
-        x_means_diff = t._params["x_means_diff"]
-        x_means_batch = torch.zeros(to_apply.shape[0], x_means_diff.shape[1])
-        x_means_batch[to_apply] = x_means_diff
-
-        return w, x_means_batch
+        return w
 
     elif isinstance(t, ColorJitter):
         to_apply = t._params['batch_prob']
@@ -133,7 +128,12 @@ def _extract_w(t):
         w[to_apply, 1] = (t._params['contrast_factor'] - 1) / (t.contrast[1]-t.contrast[0])
         w[to_apply, 2] = (t._params['saturation_factor'] - 1) / (t.saturation[1]-t.saturation[0])
         w[to_apply, 3] = t._params['hue_factor'] / (t.hue[1]-t.hue[0])
-        return w
+
+        x_means_diff = t._params["x_means_diff"]
+        x_means_batch = torch.zeros(to_apply.shape[0], x_means_diff.shape[1])
+        x_means_batch[to_apply] = x_means_diff
+
+        return w, x_means_batch
 
     elif isinstance(t, RandomRotation):
         to_apply = t._params['batch_prob']
@@ -232,8 +232,9 @@ def extract_aug_descriptors(
             pass
 
         elif isinstance(t1, K.ColorJitter):
-            w1 = _extract_w(t1)
-            results['color'], x_means_batch = w1
+            w1, x_means_batch = _extract_w(t1)
+            results['color'] = w1
+            results["color_diff"] = x_means_batch
 
         elif isinstance(t1, (nn.Identity, nn.Sequential)):
             pass
