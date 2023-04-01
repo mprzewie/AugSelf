@@ -453,7 +453,7 @@ def main(local_rank, args):
     def save_ckpt(engine):
         logger.save(engine, **models)
 
-    if args.resume is not None:
+    if args.resume != -1:
         @trainer.on(Events.STARTED)
         def load_state(engine):
             ckpt = torch.load(os.path.join(args.logdir, f'ckpt-{args.resume}.pth'), map_location='cpu')
@@ -477,7 +477,7 @@ def main(local_rank, args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--logdir', type=str, required=True)
-    parser.add_argument('--resume', type=int, default=None)
+    parser.add_argument('--resume', type=int, default=-1)
     parser.add_argument('--dataset', type=str, default='stl10')
     parser.add_argument('--datadir', type=str, default='/data')
     parser.add_argument('--batch-size', type=int, default=256)
