@@ -259,6 +259,7 @@ def barlow_twins(args, t1, t2):
             args,
             proj_out_dim=out_dim,
             proj_depth=2,
+            projector_last_bn=True
         )
     )
 

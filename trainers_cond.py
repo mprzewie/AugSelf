@@ -264,22 +264,22 @@ def barlow_twins(backbone,
 
         y1 = backbone(x1)
         y2 = backbone(x2)
-        z1 = F.normalize(projector(y1, d1_cat))
-        z2 = F.normalize(projector(y2, d2_cat))
+        z1 = projector(y1, d1_cat)
+        z2 = projector(y2, d2_cat)
 
         c = z1.T @ z2
 
-        print(c.shape)
-
-        print("pre divide")
-        print(c)
+        # print(c.shape)
+        #
+        # print("pre divide")
+        # print(c)
 
         c = c / len(z1)
 
-        print("post divide")
-        print(c)
-
-        assert False
+        # print("post divide")
+        # print(c)
+        #
+        # assert False
 
         on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
         off_diag = off_diagonal(c).pow_(2).sum()
