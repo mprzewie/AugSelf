@@ -268,7 +268,18 @@ def barlow_twins(backbone,
         z2 = F.normalize(projector(y2, d2_cat))
 
         c = z1.T @ z2
+
+        print(c.shape)
+
+        print("pre divide")
+        print(c)
+
         c = c / len(z1)
+
+        print("post divide")
+        print(c)
+
+        assert False
 
         on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
         off_diag = off_diagonal(c).pow_(2).sum()
@@ -288,6 +299,7 @@ def barlow_twins(backbone,
 
     engine = Engine(training_step)
     return engine
+
 def byol(backbone,
          projector,
          predictor,

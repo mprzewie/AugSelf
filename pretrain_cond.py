@@ -252,7 +252,7 @@ def barlow_twins(args, t1, t2):
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
 
-    sorted_aug_cond = sorted(args.aug_cond)
+    sorted_aug_cond = sorted(args.aug_cond or [])
 
     projector = build_model(
         AugProjector(
