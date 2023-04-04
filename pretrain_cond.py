@@ -239,22 +239,30 @@ def byol(args, t1, t2):
     h_dim = 4096
     device = idist.device()
 
-    # ss_objective = SSObjective(
-    #     crop  = args.ss_crop,
-    #     color = args.ss_color,
-    #     flip  = args.ss_flip,
-    #     blur  = args.ss_blur,
-    #     rot   = args.ss_rot,
-    #     only  = args.ss_only,
-    # )
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        rot   = args.ss_rot,
+        sol   = args.ss_sol,
+        only  = args.ss_only,
+    )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
-    projector    = build_model(load_mlp(args.num_backbone_features,
-                                        h_dim,
-                                        out_dim,
-                                        num_layers=2,
-                                        last_bn=False))
+
+    sorted_aug_cond = sorted(args.aug_cond)
+    n_aug_feats  = sum([AUG_DESC_SIZE_CONFIG[k] for k in sorted_aug_cond])
+    
+    cond_projector = build_model(
+        AugProjector(
+            args,
+            proj_out_dim=out_dim,
+            proj_depth=2,
+        )
+    )
+
     predictor    = build_model(load_mlp(out_dim,
                                         h_dim,
                                         out_dim,
@@ -266,20 +274,21 @@ def byol(args, t1, t2):
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params+list(predictor.parameters()))]
+    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters())+ss_params+list(predictor.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.byol(backbone=backbone,
-                            projector=projector,
+                            projector=cond_projector,
                             predictor=predictor,
                             ss_predictor=ss_predictor,
                             t1=t1, t2=t2,
                             optimizers=optimizers,
                             device=device,
-                            ss_objective=ss_objective)
+                            ss_objective=ss_objective,
+                            aug_cond=args.aug_cond or [])
 
     return dict(backbone=backbone,
-                projector=projector,
+                projector=cond_projector,
                 predictor=predictor,
                 ss_predictor=ss_predictor,
                 optimizers=optimizers,
