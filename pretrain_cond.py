@@ -22,7 +22,6 @@ from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
 from trainers import SSObjective
 from utils import Logger, get_first_free_port
-from torchlars import LARS
 
 """
 ('crop',  crop,  4, 'regression'),
@@ -240,9 +239,9 @@ def simclr(args, t1, t2):
 
 def barlow_twins(
         args, t1, t2,
-        out_dim=8192,
-        warmup_epochs=10,
-        lr_bias_scale = 0.024
+        out_dim: int=8192,
+        warmup_epochs: int=10,
+        lr_bias_scale: float = 0.024
 ):
     device = idist.device()
 
@@ -266,7 +265,7 @@ def barlow_twins(
             proj_depth=3,
             projector_last_bn=True,
             projector_last_bn_affine=False,
-            proj_hidden_dim=8192
+            proj_hidden_dim=out_dim
         )
     )
 
@@ -275,7 +274,8 @@ def barlow_twins(
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
-    build_optim = lambda x: idist.auto_optim(LARS(SGD(x)))
+
+    build_optim = lambda x: idist.auto_optim(SGD(x))
     parameters = list(backbone.parameters())+list(projector.parameters())+ss_params
     param_weights = [p for p in parameters if p.ndim != 1]
     param_biases = [p for p in parameters if p.ndim == 1]
@@ -318,6 +318,7 @@ def barlow_twins(
         device=device,
         ss_objective=ss_objective,
         aug_cond=sorted_aug_cond,
+        batch_size = args.batch_size
     )
 
     return dict(backbone=backbone,

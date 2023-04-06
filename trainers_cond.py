@@ -239,6 +239,7 @@ def barlow_twins(backbone,
            t2,
            optimizers,
            device,
+           batch_size: int,
            ss_objective: SSObjective,
            aug_cond: List[str],
            bt_lambda: float = 0.0051,
@@ -268,8 +269,8 @@ def barlow_twins(backbone,
 
         c = z1.T @ z2
 
-        c = c / len(z1)
-        idist.utils.all_reduce(c)
+        c = c / batch_size
+        c = idist.utils.all_reduce(c)
 
         on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
         off_diag = off_diagonal(c).pow_(2).sum()
