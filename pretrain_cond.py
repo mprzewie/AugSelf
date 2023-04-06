@@ -22,6 +22,7 @@ from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
 from trainers import SSObjective
 from utils import Logger, get_first_free_port
+from torchlars import LARS
 
 """
 ('crop',  crop,  4, 'regression'),
@@ -237,8 +238,12 @@ def simclr(args, t1, t2):
                 schedulers=schedulers,
                 trainer=trainer)
 
-def barlow_twins(args, t1, t2):
-    out_dim = 128
+def barlow_twins(
+        args, t1, t2,
+        out_dim=8192,
+        warmup_epochs=10,
+        lr_bias_scale = 0.024
+):
     device = idist.device()
 
     ss_objective = SSObjective(
@@ -258,8 +263,10 @@ def barlow_twins(args, t1, t2):
         AugProjector(
             args,
             proj_out_dim=out_dim,
-            proj_depth=2,
-            projector_last_bn=True
+            proj_depth=3,
+            projector_last_bn=True,
+            projector_last_bn_affine=False,
+            proj_hidden_dim=8192
         )
     )
 
@@ -268,9 +275,39 @@ def barlow_twins(args, t1, t2):
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
-    build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params)]
-    schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
+    build_optim = lambda x: idist.auto_optim(LARS(SGD(x)))
+    parameters = list(backbone.parameters())+list(projector.parameters())+ss_params
+    param_weights = [p for p in parameters if p.ndim != 1]
+    param_biases = [p for p in parameters if p.ndim == 1]
+    optimizers = [
+        build_optim([
+            {
+                'params': param_weights,
+                "lr": args.lr,
+            },
+            {
+                'params': param_biases,
+                "lr": args.lr * lr_bias_scale
+             }
+        ])
+    ]
+    schedulers = [
+        optim.lr_scheduler.SequentialLR(
+            optimizers[0],
+            [
+                optim.lr_scheduler.LinearLR(
+                    optimizers[0],
+                    start_factor=1 / warmup_epochs,
+                    end_factor=1,
+                    total_iters=warmup_epochs
+                ),
+                optim.lr_scheduler.CosineAnnealingLR(
+                    optimizers[0], args.max_epochs - warmup_epochs
+                )
+            ],
+            milestones=[warmup_epochs]
+        )
+    ]
 
     trainer = trainers.barlow_twins(
         backbone=backbone,
@@ -400,18 +437,19 @@ def main(local_rank, args):
         job_type="pretrain"
     )
 
-    with (Path(args.logdir) / "rerun.sh").open("w") as f:
-        print("python", " ".join(sys.argv), file=f)
+    if idist.get_rank() == 0:
+        with (Path(args.logdir) / "rerun.sh").open("w") as f:
+            print("python", " ".join(sys.argv), file=f)
 
-    with (Path(args.logdir) / "args.json").open("w") as f:
-        json.dump(
-            {
-                k: v if isinstance(v, (int, str, bool, float)) else str(v)
-                for (k, v) in vars(args).items()
-            },
-            f,
-            indent=2,
-        )
+        with (Path(args.logdir) / "args.json").open("w") as f:
+            json.dump(
+                {
+                    k: v if isinstance(v, (int, str, bool, float)) else str(v)
+                    for (k, v) in vars(args).items()
+                },
+                f,
+                indent=2,
+            )
 
     # DATASETS
     logger.log_msg(f"{args.seed=}")

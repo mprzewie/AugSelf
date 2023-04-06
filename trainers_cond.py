@@ -242,7 +242,6 @@ def barlow_twins(backbone,
            ss_objective: SSObjective,
            aug_cond: List[str],
            bt_lambda: float = 0.0051,
-           T: float=0.2,
            ):
     def off_diagonal(x):
         # return a flattened view of the off-diagonal elements of a square matrix
@@ -269,17 +268,8 @@ def barlow_twins(backbone,
 
         c = z1.T @ z2
 
-        # print(c.shape)
-        #
-        # print("pre divide")
-        # print(c)
-
         c = c / len(z1)
-
-        # print("post divide")
-        # print(c)
-        #
-        # assert False
+        idist.utils.all_reduce(c)
 
         on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
         off_diag = off_diagonal(c).pow_(2).sum()

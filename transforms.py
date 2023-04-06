@@ -133,9 +133,10 @@ def _extract_w(t):
         w[to_apply, 2] = (t._params['saturation_factor'] - 1) / (t.saturation[1]-t.saturation[0])
         w[to_apply, 3] = t._params['hue_factor'] / (t.hue[1]-t.hue[0])
 
-        x_means_diff = t._params["x_means_diff"]
-        x_means_batch = torch.zeros(to_apply.shape[0], x_means_diff.shape[1])
-        x_means_batch[to_apply] = x_means_diff
+        x_means_batch = torch.zeros(to_apply.shape[0], 3)
+        if "x_means_diff" in t._params:
+            x_means_diff = t._params["x_means_diff"]
+            x_means_batch[to_apply] = x_means_diff
 
         return w, x_means_batch
 
@@ -184,7 +185,7 @@ def extract_diff(transforms1, transforms2, crop1, crop2):
         elif isinstance(t1, K.Normalize):
             pass
 
-        elif isinstance(t1, K.ColorJitter):
+        elif isinstance(t1, ColorJitter):
             w1, x_means_diff_1 = _extract_w(t1)
             w2, x_means_diff_2 = _extract_w(t2)
             diff['color'] = w1-w2
@@ -236,7 +237,7 @@ def extract_aug_descriptors(
         elif isinstance(t1, K.Normalize):
             pass
 
-        elif isinstance(t1, K.ColorJitter):
+        elif isinstance(t1, ColorJitter):
             w1, x_means_batch = _extract_w(t1)
             results['color'] = w1
             results["color_diff"] = x_means_batch

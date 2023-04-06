@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 from torch import nn as nn
 
@@ -46,7 +48,9 @@ class AugProjector(nn.Module):
     def __init__(
             self,
             args, proj_out_dim: int, proj_depth: int = 2,
-            projector_last_bn: bool = False
+            proj_hidden_dim: Optional[int] = None,
+            projector_last_bn: bool = False,
+            projector_last_bn_affine: bool = True,
     ):
         super().__init__()
         self.num_backbone_features = args.num_backbone_features
@@ -151,10 +155,11 @@ class AugProjector(nn.Module):
             )
             self.projector = load_mlp(
                 projector_in,
-                args.num_backbone_features,
+                proj_hidden_dim or args.num_backbone_features,
                 proj_out_dim,
                 num_layers=proj_depth,
-                last_bn=projector_last_bn
+                last_bn=projector_last_bn,
+                last_bn_affine=projector_last_bn_affine,
             )
             print(self.projector)
 
