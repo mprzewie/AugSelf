@@ -20,6 +20,7 @@ from PIL import Image
 from torchvision.datasets import ImageFolder
 from torch.utils.data import ConcatDataset
 
+
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
@@ -30,7 +31,7 @@ def main(local_rank, args):
 
     logger = Logger(
         logdir=logdir, resume=True, wandb_suffix=f"feat_nn-{args.dataset}-{args.nn_metric}", args=args,
-        job_type="eval_nearest_neighbors"
+        job_type="eval_nearest_neighbors+query"
 
     )
 
@@ -47,8 +48,14 @@ def main(local_rank, args):
                                num_workers=args.num_workers,
                                shuffle=False,
                                pin_memory=True)
+    
+    # dataset_query = ImageFolder("./augself_queries", transform=datasets["test"].transform)
+    
 
-    testloader  = build_dataloader(datasets['test'],  drop_last=False)
+    testloader  = build_dataloader(
+        datasets['test'],
+        drop_last=False
+    )
     dataset_test_no_transforms = datasets["test_no_transform"]
 
     transforms_dict = datasets["transforms"]
@@ -91,16 +98,26 @@ def main(local_rank, args):
         n_neighbors=args.n_neighbors,
         metric=args.nn_metric
     ).fit(latents)
+    
+    query_indices = list(range(args.n_queries))
 
-    query_latents = latents[:args.n_queries]
+    if args.dataset == "flowers":
+        query_indices = [2544, 5703] + query_indices
+        
+    elif args.dataset == "cars":
+        query_indices = [5814] + query_indices
+
+    query_latents = latents[np.array(query_indices)]
+
 
     query_nns = nn.kneighbors(
         query_latents, n_neighbors=args.n_neighbors, return_distance=False
     )
-
-    for i, nn_indices in enumerate(query_nns):
+    
+    for i, nn_indices in zip(query_indices, query_nns):
         fig, ax = plt.subplots(ncols=len(nn_indices), figsize=(2*len(nn_indices), 2))
         [a.axis("off") for a in ax]
+        images_list = []
         
         for r, n in enumerate(nn_indices):
             img = dataset_test_no_transforms[n][0]
@@ -108,7 +125,9 @@ def main(local_rank, args):
             if r==0:
                 ax[r].set_title("Query")
             else:
-                ax[r].set_title(f"Result #{r}: {n}")
+                ax[r].set_title(f"Result #{r}")
+                
+            images_list.append(img)
             
         img_buf = io.BytesIO()
         fig.savefig(img_buf, format='png')
@@ -117,7 +136,8 @@ def main(local_rank, args):
         if wandb.run is not None:
             wandb.log(
                 {
-                    f"test_nn/{args.dataset}/{i}": wandb.Image(plt_im)
+                    f"test_nn/{args.dataset}/{i}": wandb.Image(plt_im),
+                    f"test_nn_separate/{args.dataset}/{i}": [wandb.Image(img) for img in images_list]
                 }
             )
     
