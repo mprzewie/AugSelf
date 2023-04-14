@@ -19,7 +19,7 @@ import pickle as pkl
 from PIL import Image
 from torchvision.datasets import ImageFolder
 from torch.utils.data import ConcatDataset
-
+import random
 
 def main(local_rank, args):
     cudnn.benchmark = True
@@ -99,7 +99,8 @@ def main(local_rank, args):
         metric=args.nn_metric
     ).fit(latents)
     
-    query_indices = list(range(args.n_queries))
+    random.seed(0)
+    query_indices = random.sample(list(range(len(latents))), args.n_queries)
 
     if args.dataset == "flowers":
         query_indices = [2544, 5703] + query_indices
