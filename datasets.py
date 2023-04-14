@@ -912,12 +912,12 @@ def load_datasets_for_cosine_sim(
             grayscale=K.RandomGrayscale(p=1),
             blur= GaussianBlur(23, (0.1, 2.0), p=1),
             # crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
-            identity=T.Compose([]),
+            identity=nn.Sequential(),
             # normalize=T.Normalize(mean, std), #TODO bug?
         )
 
         transforms = {
-            k: T.Compose([v, T.Normalize(mean, std)])
+            k: nn.Sequential(v, T.Normalize(mean, std))
             for (k,v) in transforms.items()
         }
 

@@ -13,6 +13,7 @@ from kornia.augmentation.utils import _transform_input, _validate_input_dtype
 
 
 import kornia.augmentation.functional as KF
+from torchvision.transforms import Normalize
 
 
 class MultiView:
@@ -214,10 +215,14 @@ def extract_aug_descriptors(
     transforms1, crop1
 ):
     results = {}
+    f1 = None
     for t1 in transforms1:
         if isinstance(t1, K.RandomHorizontalFlip):
             f1 = t1._params['batch_prob']
             break
+
+    if f1 is None:
+        f1 = torch.zeros(len(crop1)).bool()
 
     center1 = crop1[:, :2] + crop1[:, 2:] / 2
     center1[f1, 1] = 1 - center1[f1, 1]
@@ -252,7 +257,8 @@ def extract_aug_descriptors(
         elif isinstance(t1, K.RandomSolarize):
             w1 = _extract_w(t1)
             results['sol'] = w1
-
+        elif isinstance(t1, Normalize):
+            pass
         else:
             raise Exception(f'Unknown transform: {str(t1.__class__)}')
 

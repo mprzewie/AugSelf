@@ -9,10 +9,18 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch import cosine_similarity
 
+from cond_utils import AugProjector, AUG_STRATEGY, AUG_HN_TYPES, AUG_INJECTION_TYPES
 from datasets import load_datasets_for_cosine_sim
 from resnets import load_backbone_out_blocks
+from transforms import extract_aug_descriptors
 from utils import Logger, get_engine_mock
+from models import load_backbone, load_mlp, load_ss_predictor
+import torch.nn.functional as F
 
+PROJ_OUT = "projector_out"
+BKB_OUT = "backbone_out"
+MLP = "mlp"
+AUG_COND = "aug_cond"
 
 def main(local_rank, args):
     cudnn.benchmark = True
@@ -51,12 +59,45 @@ def main(local_rank, args):
     logger.log_msg(f"Evaluating {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location=device)
     backbone = load_backbone_out_blocks(args)
-
-
     backbone.load_state_dict(ckpt['backbone'])
 
     build_model = partial(idist.auto_model, sync_bn=True)
     backbone = build_model(backbone)
+
+    projector_type = None
+    if "moco" in args.origin_run_name:
+        try:
+            projector_type = MLP
+            projector = load_mlp(
+                args.num_backbone_features,
+                args.num_backbone_features,
+                128, # out_dim
+                num_layers=2,
+                last_bn=False
+            )
+            projector.load_state_dict(ckpt["projector"])
+
+        except Exception as e:
+            logger.log_msg(f"Could not load raw mlp projector bc of {e}. Trying AugProjector.")
+            # TODO load args from wandb or args.json
+            args.aug_treatment=AUG_STRATEGY.mlp
+            args.aug_hn_type=AUG_HN_TYPES.mlp
+            args.aug_nn_depth = 6
+            args.aug_nn_width = 64
+            args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
+            args.aug_inj_type = AUG_INJECTION_TYPES.proj_cat
+
+            projector_type = AUG_COND
+            projector = AugProjector(
+                args,
+                proj_out_dim=128, # out dim
+                proj_depth=2,
+            )
+            projector.load_state_dict(ckpt["projector"])
+
+        projector = build_model(projector)
+
+        print(f"loaded projector", projector_type)
 
     # EXTRACT FROZEN FEATURES
     logger.log_msg('collecting features ...')
@@ -83,8 +124,36 @@ def main(local_rank, args):
 
             feats_norm = backbone(X_norm.to(device))
 
+            if projector_type is not None:
+                if projector_type == MLP:
+                    feats_norm[PROJ_OUT] = F.normalize(projector(feats_norm[BKB_OUT]))
+                elif projector_type == AUG_COND:
+                    crop_params = torch.cat([torch.zeros(bs, 2), torch.ones(bs, 2)], dim=1)
+                    aug_desc = dict()
+                    for (t_name, t) in transforms_dict.items():
+                        aug_desc.update(
+                            extract_aug_descriptors(t, crop_params)
+                        )
+
+                    aug_keys = sorted(aug_desc.keys())
+                    d_cat = torch.concat([aug_desc[k] for k in aug_keys], dim=1).to(device)
+
+                    feats_norm[PROJ_OUT] = F.normalize(
+                        projector(feats_norm[BKB_OUT], d_cat)
+                    )
+                else:
+                    raise NotImplementedError(projector_type)
+
             for t_name, X_t in X_transformed.items():
                 feats_t = backbone(X_t.to(device))
+
+                if projector_type == MLP:
+                    feats_t[PROJ_OUT] = F.normalize(projector(feats_t[BKB_OUT]))
+                elif projector_type == AUG_COND:
+                    feats_t[PROJ_OUT] = F.normalize(
+                        projector(feats_t[BKB_OUT], d_cat)
+                    )
+
                 assert feats_norm.keys() == feats_t.keys()
 
                 for block_name, fn in feats_norm.items():
