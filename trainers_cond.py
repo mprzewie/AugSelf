@@ -35,7 +35,7 @@ def prepare_training_batch(batch, t1, t2, device) -> Tuple[
 
 def simsiam(backbone,
             projector: AugProjector,
-            predictor: AugSSPredictor,
+            predictor: nn.Module,
             ss_predictor: Dict[str, nn.Module],
             t1,
             t2,
@@ -62,8 +62,8 @@ def simsiam(backbone,
         if True:  # not ss_objective.only:
             z1 = projector(y1, d1_cat)
             z2 = projector(y2, d2_cat)
-            p1 = predictor(z1, d1_cat)
-            p2 = predictor(z2, d2_cat)
+            p1 = predictor(z1)
+            p2 = predictor(z2)
             loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
             loss2 = F.cosine_similarity(p2, z1.detach(), dim=-1).mean().mul(-1)
             loss = (loss1 + loss2).mul(0.5)
@@ -173,6 +173,86 @@ def moco(backbone,
 
         queue[queue.ptr:queue.ptr + keys.shape[0]] = keys
         queue.ptr = (queue.ptr + keys.shape[0]) % K
+
+        return outputs
+
+    engine = Engine(training_step)
+    return engine
+
+def mocov3(backbone,
+         projector: AugProjector,
+         predictor: nn.Module,
+         ss_predictor: Dict[str, nn.Module],
+         t1,
+         t2,
+         optimizers,
+         device,
+         ss_objective: SSObjective,
+         aug_cond: List[str],
+         momentum=0.999,
+         T: float = 0.2,):
+
+    target_backbone = deepcopy(backbone)
+    target_projector = deepcopy(projector)
+
+    for p in (
+            list(target_backbone.parameters()) +
+            list(target_projector.parameters())
+    ):
+        p.requires_grad = False
+
+    def training_step(engine, batch):
+        backbone.train()
+        projector.train()
+        predictor.train()
+
+        target_backbone.train()
+        target_projector.train()
+
+        for o in optimizers:
+            o.zero_grad()
+
+        (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
+
+        aug_keys = sorted(aug_cond)
+
+        d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
+
+        y1 = backbone(x1)
+        y2 = backbone(x2)
+
+        q1 = F.normalize(predictor(projector(y1, d1_cat)), dim=1)
+        q2 = F.normalize(predictor(projector(y2, d2_cat)), dim=1)
+
+        with torch.no_grad():
+            for online, target in [
+                (backbone, target_backbone), (projector, target_projector)
+            ]:
+                for p1, p2 in zip(online.parameters(), target.parameters()):
+                    p2.data.mul_(momentum).add_(p1.data, alpha=1 - momentum)
+
+            k1 = F.normalize(target_projector(target_backbone(x1), d1_cat), dim=1)
+            k2 = F.normalize(target_projector(target_backbone(x2), d2_cat), dim=1)
+
+
+        loss = 0
+        for (q, k) in [(q1, k2), (q2, k1)]:
+            k = idist.all_gather(k)
+            logits = torch.einsum('nc,mc->nm', [q, k]) / T
+            N = logits.shape[0]  # batch size per GPU
+            labels = (torch.arange(N, dtype=torch.long) + N * idist.get_rank()).cuda()
+            loss += F.cross_entropy(logits, labels) * (2 * T)
+
+        outputs = dict(loss=loss, z1=torch.concat([q1, q2], dim=0), z2=torch.concat([k2, k1], dim=0))
+        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
+
+        (loss + ss_losses['total']).backward()
+        for k, v in ss_losses.items():
+            outputs[f'ss/{k}'] = v
+
+        for o in optimizers:
+            o.step()
 
         return outputs
 

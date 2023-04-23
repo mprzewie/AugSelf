@@ -15,6 +15,7 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
+import trainers_cond
 from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES, \
     AUG_INJECTION_TYPES, AugSSPredictor
 from datasets import load_pretrain_datasets
@@ -22,6 +23,7 @@ from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
 from trainers import SSObjective
 from utils import Logger, get_first_free_port
+import vits
 
 """
 ('crop',  crop,  4, 'regression'),
@@ -62,16 +64,11 @@ def simsiam(args, t1, t2):
         )
     )
     predictor    = build_model(
-        # load_mlp(out_dim,
-        # out_dim // 4,
-        # out_dim,
-        # num_layers=2,
-        # last_bn=False)
-        AugSSPredictor(
-            args,
-            out_dim=out_dim,
-            predictor_depth=2
-        )
+        load_mlp(out_dim,
+        out_dim // 4,
+        out_dim,
+        num_layers=2,
+        last_bn=False)
     )
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
@@ -130,21 +127,6 @@ def moco(args, t1, t2):
         )
     )
 
-    # if args.aug_cnt_lambda > 0 and args.aug_treatment == AUG_STRATEGY.mlp:
-    #     aug_bkb_projector = build_model(
-    #         load_mlp(
-    #             n_in=(
-    #                 args.num_backbone_features
-    #                 if args.aug_desc_type == AUG_DESC_TYPES.absolute
-    #                 else 2 * args.num_backbone_features
-    #             ),
-    #             n_hidden=args.aug_nn_width,
-    #             n_out=args.aug_processor_out,
-    #             num_layers=args.aug_nn_depth,
-    #         )
-    #     )
-    # else:
-    #     aug_bkb_projector = nn.Identity()
 
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
@@ -170,10 +152,6 @@ def moco(args, t1, t2):
             optimizers=optimizers,
             device=device,
             ss_objective=ss_objective,
-            # aug_desc_type=args.aug_desc_type,
-            # aug_contrastive_loss_lambda=args.aug_cnt_lambda,
-            # aug_bkb_projector=aug_bkb_projector,
-            # aug_treatment=args.aug_treatment,
             aug_cond=args.aug_cond or []
     )
 
@@ -183,6 +161,108 @@ def moco(args, t1, t2):
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
+
+def mocov3(
+        args, t1, t2,
+        # vit-b args
+        stop_grad_conv1: bool=True,
+        moco_dim: int=256,
+        moco_mlp_dim: int=4096,
+        T: float=0.2,
+        warmup_epochs: int=40,
+
+
+):
+
+    # lr = 1.5e-4
+    # wd = .1
+    #--optimizer = adamw - -lr = 1.5e-4 - -weight - decay = .1 \
+    # --epochs = 300 - -warmup - epochs = 40 \
+    # --stop - grad - conv1 - -moco - m - cos - -moco - t = .2 \
+    device = idist.device()
+
+    ss_objective = SSObjective(
+        crop=args.ss_crop,
+        color=args.ss_color,
+        flip=args.ss_flip,
+        blur=args.ss_blur,
+        only=args.ss_only,
+    )
+
+    sorted_aug_cond = sorted(args.aug_cond or [])
+
+    build_model  = partial(idist.auto_model, sync_bn=True)
+    backbone = vits.vit_base(stop_grad_conv1=stop_grad_conv1, num_classes=moco_mlp_dim)
+    args.num_backbone_features= backbone.head.weight.shape[1]
+    backbone.head = nn.Identity()
+
+    projector: AugProjector= build_model(
+        AugProjector(
+            args,
+            proj_hidden_dim=moco_mlp_dim,
+            proj_out_dim=moco_dim,
+            proj_depth=3,
+            projector_last_bn=True, projector_last_bn_affine=True
+        )
+    )
+
+    predictor =  build_model(
+        load_mlp(moco_dim,
+        moco_mlp_dim,
+        moco_dim,
+        num_layers=2,
+        last_bn=True, last_bn_affine=False)
+    )
+
+    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+
+    AdamW = partial(optim.AdamW, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
+    build_optim = lambda x: idist.auto_optim(AdamW(x))
+    optimizers = [
+        build_optim(list(backbone.parameters())+list(projector.parameters()) + list(predictor.parameters())+ss_params)
+    ]
+    schedulers = [
+        optim.lr_scheduler.SequentialLR(
+            optimizers[0],
+            [
+                optim.lr_scheduler.LinearLR(
+                    optimizers[0],
+                    start_factor=1 / warmup_epochs,
+                    end_factor=1,
+                    total_iters=warmup_epochs
+                ),
+                optim.lr_scheduler.CosineAnnealingLR(
+                    optimizers[0], args.max_epochs - warmup_epochs
+                )
+            ],
+            milestones=[warmup_epochs]
+        )
+    ]
+    trainer = trainers_cond.mocov3(
+        backbone=backbone,
+        projector=projector,
+        predictor=predictor,
+        ss_predictor=ss_predictor,
+        t1=t1,t2=t2,
+        optimizers=optimizers,
+        device=device,
+        ss_objective=ss_objective,
+        aug_cond=sorted_aug_cond,
+    )
+
+    return dict(
+        backbone=backbone,
+        projector=projector,
+        ss_predictor=ss_predictor,
+        optimizers=optimizers,
+        schedulers=schedulers,
+        trainer=trainer
+    )
+
+
+
 
 def simclr(args, t1, t2):
     out_dim = 128
@@ -489,6 +569,8 @@ def main(local_rank, args):
         models = byol(args, t1, t2)
     elif args.framework == 'swav':
         models = swav(args, t1, t2)
+    elif args.framework == "mocov3":
+        models = mocov3(args, t1, t2)
 
     trainer   = models['trainer']
     evaluator = trainers.nn_evaluator(backbone=models['backbone'],
@@ -582,7 +664,9 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--distributed', action='store_true')
 
-    parser.add_argument('--framework', type=str, default='simsiam', choices=["moco", "simsiam", "simclr", "barlow_twins"])
+    parser.add_argument('--framework', type=str, default='simsiam',
+                        choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3"]
+                        )
 
     parser.add_argument('--base-lr', type=float, default=0.03)
     parser.add_argument('--wd', type=float, default=5e-4)
