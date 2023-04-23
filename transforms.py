@@ -30,7 +30,7 @@ class RandomResizedCrop(T.RandomResizedCrop):
         W, H = F.get_image_size(img)
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
         img = F.resized_crop(img, i, j, h, w, self.size, self.interpolation)
-        tensor = F.to_tensor(img)
+        tensor = F.to_tensor(img) if not isinstance(img, torch.Tensor) else img
         return tensor, torch.tensor([i/H, j/W, h/H, w/W], dtype=torch.float)
 
 

@@ -12,15 +12,19 @@ from torch import cosine_similarity
 from cond_utils import AugProjector, AUG_STRATEGY, AUG_HN_TYPES, AUG_INJECTION_TYPES
 from datasets import load_datasets_for_cosine_sim
 from resnets import load_backbone_out_blocks
-from transforms import extract_aug_descriptors
+from transforms import extract_aug_descriptors, RandomResizedCrop
 from utils import Logger, get_engine_mock
 from models import load_backbone, load_mlp, load_ss_predictor
 import torch.nn.functional as F
 
 PROJ_OUT = "projector_out"
+PROJ_OUT_MIXED = "projector_out_mixed_descriptors"
+
 BKB_OUT = "backbone_out"
 MLP = "mlp"
 AUG_COND = "aug_cond"
+
+proj_sims = defaultdict(list)
 
 def main(local_rank, args):
     cudnn.benchmark = True
@@ -65,7 +69,7 @@ def main(local_rank, args):
     backbone = build_model(backbone)
 
     projector_type = None
-    if "moco" in args.origin_run_name:
+    if "moco" in args.origin_run_name and "OFFICIAL" not in args.origin_run_name:
         try:
             projector_type = MLP
             projector = load_mlp(
@@ -112,12 +116,22 @@ def main(local_rank, args):
     t_name_to_b_name_to_diff_sims = defaultdict(
         lambda: defaultdict(list)
     )
-
+    rrc = RandomResizedCrop(224, scale=(0.2, 1.0))
+    identity = transforms_dict["identity"]
+    
     with torch.no_grad():
         for i, (X, _) in enumerate(testloader):
             X_transformed = {
                 t_name: t(X) for (t_name, t) in transforms_dict.items()
             }
+            X_crops_and_params = [rrc(x) for x in X]
+            crop_params = torch.stack([p for (_, p) in X_crops_and_params])
+            X_crop = torch.stack([x for (x, _) in X_crops_and_params])
+            X_crop = identity(X_crop) #norm
+            X_transformed["crop"] = X_crop
+            print(X_crop.shape, crop_params.shape)
+            # print(crop_params)
+            
             X_norm = X_transformed.pop("identity")
 
             bs = X_norm.shape[0]
@@ -128,18 +142,61 @@ def main(local_rank, args):
                 if projector_type == MLP:
                     feats_norm[PROJ_OUT] = F.normalize(projector(feats_norm[BKB_OUT]))
                 elif projector_type == AUG_COND:
-                    crop_params = torch.cat([torch.zeros(bs, 2), torch.ones(bs, 2)], dim=1)
+                    fake_crop_params = torch.cat([torch.zeros(bs, 2), torch.ones(bs, 2)], dim=1)
                     aug_desc = dict()
+                    
                     for (t_name, t) in transforms_dict.items():
+                        assert t_name != "crop"
                         aug_desc.update(
-                            extract_aug_descriptors(t, crop_params)
+                            extract_aug_descriptors(
+                                t, 
+                                fake_crop_params
+                            )
                         )
+                    
+                    computed_crop_params = extract_aug_descriptors([], crop_params)["crop"]
+                    
+                    aug_desc["flip"] = torch.ones_like(aug_desc["flip"])
 
                     aug_keys = sorted(aug_desc.keys())
-                    d_cat = torch.concat([aug_desc[k] for k in aug_keys], dim=1).to(device)
-
+                    t_to_aug_descriptors = dict()
+                    
+                    for t_name in transforms_dict.keys():
+                        
+                        augs_to_search_in = ["crop", t_name] if t_name != "color" else ["crop", t_name, "color_diff"]
+                        t_to_aug_descriptors[t_name] = torch.cat(
+                            [
+                                (aug_desc[k] if k in augs_to_search_in else torch.zeros_like(aug_desc[k]))
+                                for k in aug_keys
+                            ], 
+                            dim=1
+                        ).to(device)
+                        
+                        augs_mixed_to_search_in = augs_to_search_in
+                        if t_name in ["flip", "grayscale"]:
+                            augs_mixed_to_search_in = ["crop"]
+                        
+                        t_to_aug_descriptors[f"{t_name}_mixed"] = torch.cat(
+                            [
+                                (aug_desc[k] if k in augs_mixed_to_search_in else torch.zeros_like(aug_desc[k]))
+                                for k in aug_keys
+                            ], 
+                            dim=1
+                        ).to(device)
+                    
+                    t_to_aug_descriptors["crop"] = t_to_aug_descriptors["crop_mixed"]= torch.cat(
+                            [
+                                (computed_crop_params if k =="crop" else torch.zeros_like(aug_desc[k]))
+                                for k in aug_keys
+                            ], 
+                            dim=1
+                        ).to(device)                    
+                    
                     feats_norm[PROJ_OUT] = F.normalize(
-                        projector(feats_norm[BKB_OUT], d_cat)
+                        projector(feats_norm[BKB_OUT], t_to_aug_descriptors["identity"])
+                    )
+                    feats_norm[PROJ_OUT_MIXED] = F.normalize(
+                        projector(feats_norm[BKB_OUT], t_to_aug_descriptors["identity"])
                     )
                 else:
                     raise NotImplementedError(projector_type)
@@ -151,8 +208,12 @@ def main(local_rank, args):
                     feats_t[PROJ_OUT] = F.normalize(projector(feats_t[BKB_OUT]))
                 elif projector_type == AUG_COND:
                     feats_t[PROJ_OUT] = F.normalize(
-                        projector(feats_t[BKB_OUT], d_cat)
+                        projector(feats_t[BKB_OUT], t_to_aug_descriptors[t_name])
                     )
+                    feats_t[PROJ_OUT_MIXED] = F.normalize(
+                        projector(feats_t[BKB_OUT], torch.flip(t_to_aug_descriptors[f"{t_name}_mixed"], [0]))
+                    )
+                    
 
                 assert feats_norm.keys() == feats_t.keys()
 
@@ -161,6 +222,10 @@ def main(local_rank, args):
                     fn_r = fn.reshape(bs, -1)
                     ft_r = ft.reshape(bs, -1)
                     positive_sim = cosine_similarity(fn_r, ft_r).mean().item()
+                    
+                    if block_name in [PROJ_OUT, PROJ_OUT_MIXED]:
+                        proj_sims[f"{block_name}/{t_name}"].extend(cosine_similarity(fn_r, ft_r).detach().cpu().numpy().reshape(-1))
+                    
                     negative_sim = cosine_similarity(
                         fn_r,
                         torch.flip(ft_r, [0])
@@ -187,6 +252,9 @@ def main(local_rank, args):
                     std_sim = np.std(sims)
                     logger.log_msg(f'{sim_kind} {args.dataset} invariance of {block_name} to {t_name}: {mean_sim:.4f}±{std_sim:.4f}')
                     metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/{sim_kind}"] = mean_sim
+                    
+                    if block_name in [PROJ_OUT, PROJ_OUT_MIXED]:
+                        metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/positive_sims"] = np.array(proj_sims[f"{block_name}/{t_name}"])
 
         logger.log(
             engine=engine_mock, global_step=i,
