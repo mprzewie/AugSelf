@@ -93,7 +93,7 @@ class Pets(ImageList):
 class SUN397(ImageList):
     def __init__(self, root, split, transform=None):
         # some files exists only in /storage/shared/datasets/mimit67_indoor_scenes/indoorCVPR_09/images_train_test/Images/
-        root = os.path.join(root, "sun397")
+        root = os.path.join(root, "SUN397")
         with open(os.path.join(root, 'ClassName.txt')) as f:
             classes = [line.strip() for line in f]
 
