@@ -105,4 +105,3 @@ dependencies:
       - tensorboard-plugin-wit==1.8.1
       - werkzeug==2.2.2
       - zipp==3.12.0
-prefix: /home/mpyl/miniconda3/envs/AugSelfConditioning
