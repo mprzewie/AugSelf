@@ -390,7 +390,7 @@ def main(local_rank, args):
     logger.log_msg(f"Building {args.framework}")
 
 
-    assert args.framework in ["moco", "simsiam", "simclr"] # TODO
+    assert args.framework in ["moco", "simsiam", "simclr", "byol"] # TODO
 
     if args.framework == 'simsiam':
         models = simsiam(args, t1, t2)

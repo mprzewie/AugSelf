@@ -269,15 +269,16 @@ def byol(backbone,
         aug_ks = sorted(aug_cond)
         d1_cat = torch.cat([desc1[k] for k in aug_ks], dim=1)
         d2_cat = torch.cat([desc2[k] for k in aug_ks], dim=1)
+
+        y1, y2 = backbone(x1), backbone(x2)
         y_1d_1 = torch.cat([y1, d1_cat], dim=1)
         y_2d_2 = torch.cat([y2, d2_cat], dim=1)
 
-        y1, y2 = backbone(x1), backbone(x2)
         z1, z2 = projector(y1, d1_cat), projector(y2, d2_cat)
         p1, p2 = predictor(z1), predictor(z2)
         with torch.no_grad():
-            tgt1 = target_projector(target_backbone(x1))
-            tgt2 = target_projector(target_backbone(x2))
+            tgt1 = target_projector(target_backbone(x1), d1_cat)
+            tgt2 = target_projector(target_backbone(x2), d2_cat)
 
         loss1 = F.cosine_similarity(p1, tgt2.detach(), dim=-1).mean().mul(-1)
         loss2 = F.cosine_similarity(p2, tgt1.detach(), dim=-1).mean().mul(-1)
