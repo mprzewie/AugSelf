@@ -1,12 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=mp_marcin_cond_simsiam_4_32_005
-#SBATCH --qos=big
+#SBATCH --job-name=mp_marcin_cond_simsiam_6_64_003
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G
 #SBATCH --partition=batch
 #SBATCH --cpus-per-task=24
 #SBATCH --ntasks=1
-#SBATCH --output=slurm-%j_marcin_cond_simsiam_4_32_005.out
+#SBATCH --output=slurm-%j_marcin_cond_simsiam_6_64_003.out
+
+set -e
 
 eval "$(conda shell.bash hook)"
 conda activate AugSelfDgx
@@ -31,9 +32,9 @@ FREQ=50
 EVAL_FREQ=50
 SEED=1997
 
-EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_cond"
-OUT_DIR="${RES_DIR}${EXP_NAME}"
-export WANDB_DIR="${OUT_DIR}"
+#EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_cond"
+#OUT_DIR="${RES_DIR}${EXP_NAME}"
+#export WANDB_DIR="${OUT_DIR}"
 
 cd "${SRC_DIR}"
 
@@ -42,9 +43,9 @@ source "${SRC_DIR}ideas_setup_datadirs.sh"
 
 for AUG_TREATMENT in "mlp";
 do
-  for AUG_NN_DEPTH in 8;
+  for AUG_NN_DEPTH in 6;
   do
-    for AUG_NN_WIDTH in 16;
+    for AUG_NN_WIDTH in 64;
     do
       for CUR_LR in 0.03;
       do

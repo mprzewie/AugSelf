@@ -1,6 +1,6 @@
 EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_${AUG_TREATMENT}_${AUG_NN_DEPTH}_${AUG_NN_WIDTH}_${AUG_INJ}_${SUFFIX}"
 OUT_DIR="${RES_DIR}${EXP_NAME}"
-
+export WANDB_DIR="${OUT_DIR}"
 
 python pretrain_cond.py \
           --logdir $OUT_DIR \
