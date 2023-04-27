@@ -195,6 +195,8 @@ def mocov3(
     backbone = vits.vit_base(stop_grad_conv1=stop_grad_conv1, num_classes=moco_mlp_dim)
     args.num_backbone_features= backbone.head.weight.shape[1]
     backbone.head = nn.Identity()
+    
+    backbone = build_model(backbone)
 
     projector: AugProjector= build_model(
         AugProjector(
