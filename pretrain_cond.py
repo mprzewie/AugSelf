@@ -218,7 +218,7 @@ def mocov3(
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
-    AdamW = partial(optim.AdamW, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
+    AdamW = partial(optim.AdamW, lr=args.lr, weight_decay=args.wd)
     build_optim = lambda x: idist.auto_optim(AdamW(x))
     optimizers = [
         build_optim(list(backbone.parameters())+list(projector.parameters()) + list(predictor.parameters())+ss_params)
