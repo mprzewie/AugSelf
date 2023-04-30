@@ -200,6 +200,13 @@ def mocov3(backbone,
             list(target_projector.parameters())
     ):
         p.requires_grad = False
+    
+    def mv3_contrastive_loss(q, k):
+        k = idist.all_gather(k)
+        logits = torch.einsum('nc,mc->nm', [q, k]) / T
+        N = logits.shape[0]  # batch size per GPU
+        labels = (torch.arange(N, dtype=torch.long) + N * idist.get_rank()).to(device)
+        return F.cross_entropy(logits, labels) * (2 * T)
 
     def training_step(engine, batch):
         backbone.train()
@@ -236,13 +243,8 @@ def mocov3(backbone,
             k2 = F.normalize(target_projector(target_backbone(x2), d2_cat), dim=1)
 
 
-        loss = 0
-        for (q, k) in [(q1, k2), (q2, k1)]:
-            k = idist.all_gather(k)
-            logits = torch.einsum('nc,mc->nm', [q, k]) / T
-            N = logits.shape[0]  # batch size per GPU
-            labels = (torch.arange(N, dtype=torch.long) + N * idist.get_rank()).cuda()
-            loss += F.cross_entropy(logits, labels) * (2 * T)
+        loss = mv3_contrastive_loss(q1,k1) + mv3_contrastive_loss(q2,k2)
+            
 
         outputs = dict(loss=loss, z1=torch.concat([q1, q2], dim=0), z2=torch.concat([k2, k1], dim=0))
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)

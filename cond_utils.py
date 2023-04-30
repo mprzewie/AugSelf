@@ -66,7 +66,7 @@ class AugProjector(nn.Module):
         print("Projector aug strategy:", self.aug_treatment)
         print("Conditioning projector on augmentations:", self.aug_subset_sizes)
 
-        if self.aug_treatment == AUG_STRATEGY.raw:
+        if self.aug_treatment == AUG_STRATEGY.raw or self.aug_inj_type==AUG_INJECTION_TYPES.proj_none:
             self.num_aug_features = sum(self.aug_subset_sizes.values())
 
             self.aug_processor = nn.Identity()
@@ -76,7 +76,7 @@ class AugProjector(nn.Module):
 
             self.aug_processor_out = (
                 self.aug_nn_width
-                if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_none]
+                if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat]
                 else args.num_backbone_features
             )
 

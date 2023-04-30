@@ -354,6 +354,10 @@ def main(local_rank, args):
     @trainer.on(Events.EPOCH_COMPLETED(every=args.ckpt_freq))
     def save_ckpt(engine):
         logger.save(engine, **models)
+    
+    @trainer.on(Events.EPOCH_COMPLETED(every=1))
+    def save_last_ckpt(engine):
+        logger.save(engine, override_name="ckpt-last.pth", **models)
 
     if args.resume is not None:
         @trainer.on(Events.STARTED)
