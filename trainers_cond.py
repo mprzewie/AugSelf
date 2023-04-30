@@ -179,7 +179,8 @@ def moco(backbone,
     engine = Engine(training_step)
     return engine
 
-def mocov3(backbone,
+def mocov3(
+         backbone,
          projector: AugProjector,
          predictor: nn.Module,
          ss_predictor: Dict[str, nn.Module],

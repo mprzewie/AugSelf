@@ -201,7 +201,7 @@ def mocov3(
             proj_hidden_dim=moco_mlp_dim,
             proj_out_dim=moco_dim,
             proj_depth=3,
-            projector_last_bn=True, projector_last_bn_affine=True
+            projector_last_bn=True, projector_last_bn_affine=False
         )
     )
 
