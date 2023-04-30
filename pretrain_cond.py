@@ -637,11 +637,7 @@ def main(local_rank, args):
     if args.resume is not None:
         @trainer.on(Events.STARTED)
         def load_state(engine):
-            if isinstance(args.resume, int):
-                resume_path = Path(args.logdir) / f'ckpt-{args.resume}.pth'
-            else:
-                resume_path = Path(args.resume)
-
+            resume_path = Path(args.logdir) / f'ckpt-{args.resume}.pth'
             assert resume_path.exists(), resume_path
 
             ckpt = torch.load(resume_path, map_location='cpu')
