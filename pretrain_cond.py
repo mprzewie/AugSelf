@@ -637,7 +637,14 @@ def main(local_rank, args):
     if args.resume is not None:
         @trainer.on(Events.STARTED)
         def load_state(engine):
-            ckpt = torch.load(os.path.join(args.logdir, f'ckpt-{args.resume}.pth'), map_location='cpu')
+            if isinstance(args.resume, int):
+                resume_path = Path(args.logdir) / f'ckpt-{args.resume}.pth'
+            else:
+                resume_path = Path(args.resume)
+
+            assert resume_path.exists(), resume_path
+
+            ckpt = torch.load(resume_path, map_location='cpu')
             for k, v in models.items():
                 if isinstance(v, nn.parallel.DistributedDataParallel):
                     v = v.module
@@ -658,7 +665,7 @@ def main(local_rank, args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--logdir', type=str, required=True)
-    parser.add_argument('--resume', type=int, default=None)
+    parser.add_argument('--resume', default=None)
     parser.add_argument('--dataset', type=str, default='stl10')
     parser.add_argument('--datadir', type=str, default='/data')
     parser.add_argument('--batch-size', type=int, default=256)
