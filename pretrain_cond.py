@@ -192,11 +192,8 @@ def mocov3(
     sorted_aug_cond = sorted(args.aug_cond or [])
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone = vits.vit_base(stop_grad_conv1=stop_grad_conv1, num_classes=moco_mlp_dim)
-    args.num_backbone_features= backbone.head.weight.shape[1]
-    backbone.head = nn.Identity()
+    backbone = build_model(load_backbone(args))
     
-    backbone = build_model(backbone)
 
     projector: AugProjector= build_model(
         AugProjector(
@@ -663,7 +660,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--max-epochs', type=int, default=200)
     parser.add_argument('--num-workers', type=int, default=4)
-    parser.add_argument('--model', type=str, default='resnet18')
+    parser.add_argument('--model', type=str, default='resnet18', choices=["resnet18", "resnet50", "vit_base"])
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='simsiam',

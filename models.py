@@ -8,6 +8,9 @@ import torch.optim as optim
 
 from torchvision import models
 
+import vits
+
+
 def reset_parameters(model):
     for m in model.modules():
         if isinstance(m, nn.Conv2d):
@@ -22,13 +25,23 @@ def reset_parameters(model):
 
 def load_backbone(args):
     name = args.model
-    backbone = models.__dict__[name.split('_')[-1]](zero_init_residual=True)
-    if name.startswith('cifar_'):
-        backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        backbone.maxpool = nn.Identity()
-    args.num_backbone_features = backbone.fc.weight.shape[1]
-    backbone.fc = nn.Identity()
-    reset_parameters(backbone)
+    if name.startswith("resnet"):
+        backbone = models.__dict__[name.split('_')[-1]](zero_init_residual=True)
+        if name.startswith('cifar_'):
+            backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            backbone.maxpool = nn.Identity()
+        args.num_backbone_features = backbone.fc.weight.shape[1]
+        backbone.fc = nn.Identity()
+        reset_parameters(backbone)
+
+    elif name=="vit_base":
+        backbone = vits.vit_base()
+        args.num_backbone_features = backbone.head.weight.shape[1]
+        backbone.head = nn.Identity()
+    else:
+        raise NotImplementedError(name)
+
+
     return backbone
 
 

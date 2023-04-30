@@ -160,6 +160,8 @@ def main(local_rank, args):
 
         logger.log_msg(f"Evaluating {ckpt_path}")
         ckpt = torch.load(ckpt_path, map_location=device)
+        
+        
         backbone = load_backbone(args)
         backbone.load_state_dict(ckpt['backbone'])
 
