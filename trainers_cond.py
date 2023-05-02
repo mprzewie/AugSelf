@@ -244,7 +244,7 @@ def mocov3(
             k2 = F.normalize(target_projector(target_backbone(x2), d2_cat), dim=1)
 
 
-        loss = mv3_contrastive_loss(q1,k1) + mv3_contrastive_loss(q2,k2)
+        loss = mv3_contrastive_loss(q1,k2) + mv3_contrastive_loss(q2,k1)
             
 
         outputs = dict(loss=loss, z1=torch.concat([q1, q2], dim=0), z2=torch.concat([k2, k1], dim=0))
