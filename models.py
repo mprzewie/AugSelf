@@ -38,6 +38,11 @@ def load_backbone(args):
         backbone = vits.vit_base()
         args.num_backbone_features = backbone.head.weight.shape[1]
         backbone.head = nn.Identity()
+
+    elif name=="vit_small":
+        backbone = vits.vit_small()
+        args.num_backbone_features = backbone.head.weight.shape[1]
+        backbone.head = nn.Identity()
     else:
         raise NotImplementedError(name)
 
