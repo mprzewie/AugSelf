@@ -642,19 +642,26 @@ def main(local_rank, args):
 
             ckpt = torch.load(resume_path, map_location='cpu')
             for k, v in models.items():
-                if isinstance(v, nn.parallel.DistributedDataParallel):
-                    v = v.module
+                try:
+                    if isinstance(v, nn.parallel.DistributedDataParallel):
+                        v = v.module
 
-                if hasattr(v, 'state_dict'):
-                    v.load_state_dict(ckpt[k])
+                    if hasattr(v, 'state_dict'):
+                        v.load_state_dict(ckpt[k])
 
-                if type(v) is list and hasattr(v[0], 'state_dict'):
-                    for i, x in enumerate(v):
-                        x.load_state_dict(ckpt[k][i])
+                    if type(v) is list and hasattr(v[0], 'state_dict'):
+                        for i, x in enumerate(v):
+                            x.load_state_dict(ckpt[k][i])
 
-                if type(v) is dict and k == 'ss_predictor':
-                    for y, x in v.items():
-                        x.load_state_dict(ckpt[k][y])
+                    if type(v) is dict and k == 'ss_predictor':
+                        for y, x in v.items():
+                            x.load_state_dict(ckpt[k][y])
+
+                    logger.log_msg(f"Successfully loaded {k}")
+                except Exception as e:
+                    logger.log_msg(f"Error loading {k}: {e}")
+                    if k == "backbone":
+                        raise
 
     trainer.run(trainloader, max_epochs=args.max_epochs)
 
