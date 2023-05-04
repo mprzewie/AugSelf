@@ -674,7 +674,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--max-epochs', type=int, default=200)
     parser.add_argument('--num-workers', type=int, default=4)
-    parser.add_argument('--model', type=str, default='resnet18', choices=["resnet18", "resnet50", "vit_base"])
+    parser.add_argument('--model', type=str, default='resnet18', choices=["resnet18", "resnet50", "vit_base", "vit_small"])
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='simsiam',
