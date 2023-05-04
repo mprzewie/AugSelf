@@ -142,7 +142,7 @@ class Logger(object):
         if print_msg:
             logging.info(msg)
 
-    def save(self, engine, **kwargs):
+    def save(self, engine, override_name: Optional[str]=None, **kwargs):
         if idist.get_rank() > 0:
             return
 
@@ -160,5 +160,6 @@ class Logger(object):
             if type(v) is dict and k == 'ss_predictor':
                 state[k] = { y: x.state_dict() for y, x in v.items() }
 
-        torch.save(state, os.path.join(self.logdir, f'ckpt-{engine.state.epoch}.pth'))
+        filename = override_name or  f'ckpt-{engine.state.epoch}.pth'
+        torch.save(state, os.path.join(self.logdir, filename))
 
