@@ -50,7 +50,10 @@ def load_backbone(args):
     return backbone
 
 
-def load_mlp(n_in, n_hidden, n_out, num_layers=3, last_bn=True, last_bn_affine=True) -> nn.Module:
+def load_mlp(
+        n_in, n_hidden, n_out, num_layers=3,
+        last_bn=True, last_bn_affine=True
+) -> nn.Module:
     layers = []
     for i in range(num_layers-1):
         layers.append(nn.Linear(n_in, n_hidden, bias=False))

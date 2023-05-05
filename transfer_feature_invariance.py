@@ -26,6 +26,108 @@ AUG_COND = "aug_cond"
 
 proj_sims = defaultdict(list)
 
+def load_projector(args, ckpt):
+    projector_type = None
+    projector_kwargs = None
+    if "moco-" in args.origin_run_name:
+        projector_kwargs = dict(
+            n_in=args.num_backbone_features,
+            n_hidden=args.num_backbone_features,
+            n_out=128,
+            num_layers=2,
+            last_bn=False
+        )
+    elif "mocov3" in args.origin_run_name:
+        projector_kwargs = dict(
+            n_in=args.num_backbone_features,
+            n_hidden=4096,
+            n_out=256,
+            num_layers=3,
+            last_bn=True,
+            last_bn_affine=False
+        )
+    elif "simsiam" in args.origin_run_name:
+        projector_kwargs = dict(
+            n_in=args.num_backbone_features,
+            n_hidden=2048,
+            n_out=2048,
+            num_layers=3,
+            last_bn=True
+        )
+
+    elif "simclr" in args.origin_run_name:
+        projector_kwargs = dict(
+            n_in=args.num_backbone_features,
+            n_hidden=args.num_backbone_features,
+            n_out=128,
+            num_layers=2,
+            last_bn=False
+        )
+    elif "byol" in args.origin_run_name:
+        projector_kwargs = dict(
+            n_in=args.num_backbone_features,
+            n_hidden=4096,
+            n_out=256,
+            num_layers=2,
+            last_bn=False
+        )
+    elif "barlow_twins" in args.origin_run_name:
+        projector_kwargs = dict(
+            n_in=args.num_backbone_features,
+            n_hidden=8192,
+            n_out=8192,
+            num_layers=3,
+            last_bn=True,
+            last_bn_affine=True,
+        )
+
+
+    aug_projector_kwargs = None
+    if projector_kwargs is not None:
+        aug_projector_kwargs = dict(
+            args=args,
+            proj_out_dim=projector_kwargs["out_dim"],
+            proj_depth=projector_kwargs.get("num_layers", 2),
+            proj_hidden_dim=projector_kwargs.get("n_hidden"),
+            projector_last_bn=projector_kwargs.get("last_bn", False),
+            projector_last_bn_affine=projector_kwargs.get("last_bn_affine", False)
+        )
+
+    try:
+        try:
+            projector_type = MLP
+            projector = load_mlp(**projector_kwargs)
+            projector.load_state_dict(ckpt["projector"])
+
+        except Exception as e:
+            print(f"Could not load raw mlp projector bc of {e}. Trying AugProjector.")
+            # TODO load args from wandb or args.json
+            framework, architecture, dataset, *rest = args.origin_run_name.split("-")
+            print(f"Parsing #1: {framework=}, {architecture=}, {dataset=}, {rest=}")
+            sth, aug_treatment, depth, width, inj_type, *rest = rest[0].split("_")
+            print(f"Parsing #2: {sth=}, {aug_treatment=}, {depth=}, {width=}, {inj_type=}, {rest=}")
+
+            args.aug_treatment = aug_treatment
+            args.aug_hn_type = AUG_HN_TYPES.mlp
+            args.aug_nn_depth = depth
+            args.aug_nn_width = width
+            args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
+            args.aug_inj_type = inj_type
+
+            projector_type = AUG_COND
+            projector = AugProjector(**aug_projector_kwargs)
+            projector.load_state_dict(ckpt["projector"])
+
+        build_model = partial(idist.auto_model, sync_bn=True)
+        projector = build_model(projector)
+
+        print(f"loaded projector", projector_type)
+        return projector_type, projector
+
+    except Exception as e:
+        print(f"Could not load any projector bf of {e}")
+        return projector_type, None
+
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
@@ -68,40 +170,7 @@ def main(local_rank, args):
     build_model = partial(idist.auto_model, sync_bn=True)
     backbone = build_model(backbone)
 
-    projector_type = None
-    if "moco" in args.origin_run_name and "OFFICIAL" not in args.origin_run_name:
-        try:
-            projector_type = MLP
-            projector = load_mlp(
-                args.num_backbone_features,
-                args.num_backbone_features,
-                128, # out_dim
-                num_layers=2,
-                last_bn=False
-            )
-            projector.load_state_dict(ckpt["projector"])
-
-        except Exception as e:
-            logger.log_msg(f"Could not load raw mlp projector bc of {e}. Trying AugProjector.")
-            # TODO load args from wandb or args.json
-            args.aug_treatment=AUG_STRATEGY.mlp
-            args.aug_hn_type=AUG_HN_TYPES.mlp
-            args.aug_nn_depth = 6
-            args.aug_nn_width = 64
-            args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
-            args.aug_inj_type = AUG_INJECTION_TYPES.proj_cat
-
-            projector_type = AUG_COND
-            projector = AugProjector(
-                args,
-                proj_out_dim=128, # out dim
-                proj_depth=2,
-            )
-            projector.load_state_dict(ckpt["projector"])
-
-        projector = build_model(projector)
-
-        print(f"loaded projector", projector_type)
+    projector_type, projector = load_projector(args, ckpt)
 
     # EXTRACT FROZEN FEATURES
     logger.log_msg('collecting features ...')
@@ -129,9 +198,7 @@ def main(local_rank, args):
             X_crop = torch.stack([x for (x, _) in X_crops_and_params])
             X_crop = identity(X_crop) #norm
             X_transformed["crop"] = X_crop
-            print(X_crop.shape, crop_params.shape)
-            # print(crop_params)
-            
+
             X_norm = X_transformed.pop("identity")
 
             bs = X_norm.shape[0]
