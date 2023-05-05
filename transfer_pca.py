@@ -11,6 +11,31 @@ from sklearn.decomposition import PCA
 from datasets import load_datasets_for_cosine_sim
 from resnets import load_backbone_out_blocks
 from utils import Logger, get_engine_mock
+from sklearn.metrics import r2_score
+
+def stringer_get_powerlaw(ss, trange):
+    # COPIED FROM Stringer+Pachitariu 2018b github repo! (https://github.com/MouseLand/stringer-pachitariu-et-al-2018b/blob/master/python/utils.py)
+    ''' fit exponent to variance curve'''
+    logss = np.log(np.abs(ss))
+    y = logss[trange][:, np.newaxis]
+    trange += 1
+    nt = trange.size
+    x = np.concatenate((-np.log(trange)[:, np.newaxis], np.ones((nt, 1))), axis=1)
+    w = 1.0 / trange.astype(np.float32)[:, np.newaxis]
+    b = np.linalg.solve(x.T @ (x * w), (w * x).T @ y).flatten()
+
+    allrange = np.arange(0, ss.size).astype(int) + 1
+    x = np.concatenate((-np.log(allrange)[:, np.newaxis], np.ones((ss.size, 1))), axis=1)
+    ypred = np.exp((x * b).sum(axis=1))
+    alpha = b[0]
+    max_range = 500 if len(ss) >= 512 else len(
+        ss) - 10  # subtracting 10 here arbitrarily because we want to avoid the last tail!
+    fit_R2 = r2_score(y_true=logss[trange[0]:max_range], y_pred=np.log(np.abs(ypred))[trange[0]:max_range])
+    try:
+        fit_R2_100 = r2_score(y_true=logss[trange[0]:100], y_pred=np.log(np.abs(ypred))[trange[0]:100])
+    except:
+        fit_R2_100 = None
+    return alpha, ypred, fit_R2, fit_R2_100
 
 
 def main(local_rank, args):
@@ -76,7 +101,7 @@ def main(local_rank, args):
 
     pca = PCA().fit(latents)
     exp_var =  pca.explained_variance_ratio_
-
+    
     cum = np.cumsum(exp_var)
 
     for i, (e, c) in enumerate(zip(exp_var, cum)):
@@ -88,6 +113,19 @@ def main(local_rank, args):
                 f"test_pca/cum_variance/{args.dataset}": c,
             }
         )
+        
+    alpha, _, R2, r2_range = stringer_get_powerlaw(
+        exp_var, np.arange(5, 50)
+    )
+    logger.log(
+            engine=engine_mock, global_step=-1,
+            **{
+                f"test_pca/a-req/alpha/{args.dataset}": alpha,
+                f"test_pca/a-req/r2/{args.dataset}": R2,
+                f"test_pca/a-req/r2_100/{args.dataset}": r2_range,
+            }
+        )
+
 
 
 if __name__ == '__main__':

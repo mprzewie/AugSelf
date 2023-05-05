@@ -132,7 +132,10 @@ class Logger(object):
                 msg += f' [{k} {v}]'
 
             if self.writer is not None:
-                self.writer.add_scalar(k, v, global_step)
+                try:
+                    self.writer.add_scalar(k, v, global_step)
+                except:
+                    pass
             wandb_log[k] = v
 
         if wandb.run is not None:

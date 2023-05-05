@@ -86,7 +86,7 @@ def load_projector(args, ckpt):
     if projector_kwargs is not None:
         aug_projector_kwargs = dict(
             args=args,
-            proj_out_dim=projector_kwargs["out_dim"],
+            proj_out_dim=projector_kwargs["n_out"],
             proj_depth=projector_kwargs.get("num_layers", 2),
             proj_hidden_dim=projector_kwargs.get("n_hidden"),
             projector_last_bn=projector_kwargs.get("last_bn", False),
@@ -95,17 +95,18 @@ def load_projector(args, ckpt):
 
     try:
         try:
-            projector_type = MLP
             projector = load_mlp(**projector_kwargs)
             projector.load_state_dict(ckpt["projector"])
+            projector_type = MLP
+
 
         except Exception as e:
             print(f"Could not load raw mlp projector bc of {e}. Trying AugProjector.")
             # TODO load args from wandb or args.json
-            framework, architecture, dataset, *rest = args.origin_run_name.split("-")
-            print(f"Parsing #1: {framework=}, {architecture=}, {dataset=}, {rest=}")
-            sth, aug_treatment, depth, width, inj_type, *rest = rest[0].split("_")
-            print(f"Parsing #2: {sth=}, {aug_treatment=}, {depth=}, {width=}, {inj_type=}, {rest=}")
+            framework, architecture, *rest = args.origin_run_name.split("-")
+            print(f"Parsing #1: {framework=}, {architecture=}, {rest=}")
+            dataset, aug_treatment, depth, width, inj_type, *rest = "-".join(rest).split("_")
+            print(f"Parsing #2: {dataset=}, {aug_treatment=}, {depth=}, {width=}, {inj_type=}, {rest=}")
 
             args.aug_treatment = aug_treatment
             args.aug_hn_type = AUG_HN_TYPES.mlp
@@ -114,9 +115,10 @@ def load_projector(args, ckpt):
             args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
             args.aug_inj_type = inj_type
 
-            projector_type = AUG_COND
             projector = AugProjector(**aug_projector_kwargs)
             projector.load_state_dict(ckpt["projector"])
+            projector_type = AUG_COND
+
 
         build_model = partial(idist.auto_model, sync_bn=True)
         projector = build_model(projector)
@@ -185,6 +187,7 @@ def main(local_rank, args):
     t_name_to_b_name_to_diff_sims = defaultdict(
         lambda: defaultdict(list)
     )
+    t_name_to_b_name_to_infonce = defaultdict(lambda : defaultdict(list))
     rrc = RandomResizedCrop(224, scale=(0.2, 1.0))
     identity = transforms_dict["identity"]
     
@@ -302,6 +305,16 @@ def main(local_rank, args):
                     t_name_to_b_name_to_negative_sims[t_name][block_name].append(negative_sim)
                     t_name_to_b_name_to_diff_sims[t_name][block_name].append(positive_sim - negative_sim)
 
+                    ### infonce
+                    T=0.2
+                    fn_r = F.normalize(fn_r)
+                    ft_r = F.normalize(ft_r)
+                    logits = torch.einsum('nc,mc->nm', [fn_r, ft_r]) / T
+                    N = logits.shape[0]
+                    labels = torch.arange(N, dtype=torch.long).to(device)
+                    infonce =  F.cross_entropy(logits, labels) * (2 * T)
+                    t_name_to_b_name_to_infonce[t_name][block_name].append(infonce.item())
+
                     if (i+1) % args.print_freq == 0:
                         logger.log_msg(
                             f'{i + 1:3d} | {block_name} | {t_name} | pos: {np.mean(t_name_to_b_name_to_positive_sims[t_name][block_name]):.4f} | neg: {np.mean(t_name_to_b_name_to_negative_sims[t_name][block_name]):.4f})'
@@ -311,7 +324,8 @@ def main(local_rank, args):
         for (sim_kind, sim_dict) in [
             ("positive", t_name_to_b_name_to_positive_sims),
             ("negative", t_name_to_b_name_to_negative_sims),
-            ("diff", t_name_to_b_name_to_diff_sims)
+            ("diff", t_name_to_b_name_to_diff_sims),
+            ("infonce", t_name_to_b_name_to_infonce)
         ]:
             for t_name, b_name_to_sim in sim_dict.items():
                 for block_name, sims in b_name_to_sim.items():
