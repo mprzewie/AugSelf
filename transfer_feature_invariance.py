@@ -78,7 +78,7 @@ def load_projector(args, ckpt):
             n_out=8192,
             num_layers=3,
             last_bn=True,
-            last_bn_affine=True,
+            last_bn_affine=False,
         )
 
 
