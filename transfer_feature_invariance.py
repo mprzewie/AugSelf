@@ -105,13 +105,18 @@ def load_projector(args, ckpt):
             # TODO load args from wandb or args.json
             framework, architecture, *rest = args.origin_run_name.split("-")
             print(f"Parsing #1: {framework=}, {architecture=}, {rest=}")
-            dataset, aug_treatment, depth, width, inj_type, *rest = "-".join(rest).split("_")
-            print(f"Parsing #2: {dataset=}, {aug_treatment=}, {depth=}, {width=}, {inj_type=}, {rest=}")
-
+            
+            try:
+                dataset, aug_treatment, depth, width, inj_type, *rest = "-".join(rest).split("_")
+                print(f"Parsing #2: {dataset=}, {aug_treatment=}, {depth=}, {width=}, {inj_type=}, {rest=}")
+            except:
+                dataset, aug_treatment, depth, width, inj_type = "imagenet100", "mlp", 6, 64, "proj-none"
+                print(f"Parsing #2 failed, trying defaults: {dataset=}, {aug_treatment=}, {depth=}, {width=}, {inj_type=}")
+                
             args.aug_treatment = aug_treatment
             args.aug_hn_type = AUG_HN_TYPES.mlp
-            args.aug_nn_depth = depth
-            args.aug_nn_width = width
+            args.aug_nn_depth = int(depth)
+            args.aug_nn_width = int(width)
             args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
             args.aug_inj_type = inj_type
 
