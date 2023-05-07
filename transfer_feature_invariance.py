@@ -342,8 +342,12 @@ def main(local_rank, args):
                     t_name_to_b_name_to_infonce[t_name][block_name].append(infonce.item())
                     self_distill = self_distill_loss(fn_r, ft_r)
                     t_name_to_b_name_to_self_distill[t_name][block_name].append(self_distill.item())
-                    cca = cca_loss(fn_r, ft_r)
-                    t_name_to_b_name_to_cca[t_name][block_name].append(cca.item())
+
+                    try:
+                        cca = cca_loss(fn_r, ft_r)
+                        t_name_to_b_name_to_cca[t_name][block_name].append(cca.item())
+                    except:
+                        pass
 
                     if (i+1) % args.print_freq == 0:
                         logger.log_msg(
@@ -355,7 +359,9 @@ def main(local_rank, args):
             ("positive", t_name_to_b_name_to_positive_sims),
             ("negative", t_name_to_b_name_to_negative_sims),
             ("diff", t_name_to_b_name_to_diff_sims),
-            ("infonce", t_name_to_b_name_to_infonce)
+            ("infonce", t_name_to_b_name_to_infonce),
+            ("self-distill", t_name_to_b_name_to_self_distill),
+            ("cca", t_name_to_b_name_to_cca),
         ]:
             for t_name, b_name_to_sim in sim_dict.items():
                 for block_name, sims in b_name_to_sim.items():
