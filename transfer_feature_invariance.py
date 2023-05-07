@@ -130,6 +130,36 @@ def load_projector(args, ckpt):
         print(f"Could not load any projector bf of {e}")
         return projector_type, None
 
+def infonce_loss(ft_1, ft_2, device, T: float = 0.2):
+    fn_r = F.normalize(ft_1)
+    ft_r = F.normalize(ft_2)
+    logits = torch.einsum('nc,mc->nm', [fn_r, ft_r]) / T
+    N = logits.shape[0]
+    labels = torch.arange(N, dtype=torch.long).to(device)
+    return F.cross_entropy(logits, labels) * (2 * T)
+
+def self_distill_loss(ft_1, ft_2, device=None):
+    return F.cosine_similarity(ft_1, ft_2.detach(), dim=-1).mean().mul(-1)
+
+def cca_loss(
+        ft_1, ft_2,
+        device=None,
+        bt_lambda: float = 0.0051,
+):
+    def off_diagonal(x):
+        # return a flattened view of the off-diagonal elements of a square matrix
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    c = ft_1.T @ ft_2
+
+    c = c / len(ft_1)
+
+    on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
+    off_diag = off_diagonal(c).pow_(2).sum()
+    return on_diag + bt_lambda * off_diag
+
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
@@ -188,6 +218,9 @@ def main(local_rank, args):
         lambda: defaultdict(list)
     )
     t_name_to_b_name_to_infonce = defaultdict(lambda : defaultdict(list))
+    t_name_to_b_name_to_self_distill = defaultdict(lambda : defaultdict(list))
+    t_name_to_b_name_to_cca = defaultdict(lambda : defaultdict(list))
+
     rrc = RandomResizedCrop(224, scale=(0.2, 1.0))
     identity = transforms_dict["identity"]
     
@@ -305,15 +338,12 @@ def main(local_rank, args):
                     t_name_to_b_name_to_negative_sims[t_name][block_name].append(negative_sim)
                     t_name_to_b_name_to_diff_sims[t_name][block_name].append(positive_sim - negative_sim)
 
-                    ### infonce
-                    T=0.2
-                    fn_r = F.normalize(fn_r)
-                    ft_r = F.normalize(ft_r)
-                    logits = torch.einsum('nc,mc->nm', [fn_r, ft_r]) / T
-                    N = logits.shape[0]
-                    labels = torch.arange(N, dtype=torch.long).to(device)
-                    infonce =  F.cross_entropy(logits, labels) * (2 * T)
+                    infonce = infonce_loss(fn_r, ft_r, device)
                     t_name_to_b_name_to_infonce[t_name][block_name].append(infonce.item())
+                    self_distill = self_distill_loss(fn_r, ft_r)
+                    t_name_to_b_name_to_self_distill[t_name][block_name].append(self_distill.item())
+                    cca = cca_loss(fn_r, ft_r)
+                    t_name_to_b_name_to_cca[t_name][block_name].append(cca.item())
 
                     if (i+1) % args.print_freq == 0:
                         logger.log_msg(
