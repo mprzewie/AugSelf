@@ -61,6 +61,9 @@ def simsiam(args, t1, t2):
             args,
             proj_out_dim=out_dim,
             proj_depth=2+int(args.dataset.startswith('imagenet')),
+            projector_last_bn=True, 
+            projector_last_bn_affine=True
+            
         )
     )
     predictor    = build_model(
