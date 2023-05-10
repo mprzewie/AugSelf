@@ -80,7 +80,7 @@ def simsiam(args, t1, t2):
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters())), #+ss_params),
+    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters()) +ss_params),
                   build_optim(list(predictor.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
