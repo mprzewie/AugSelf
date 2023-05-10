@@ -59,6 +59,7 @@ def simsiam(args, t1, t2):
     cond_projector = build_model(
         AugProjector(
             args,
+            proj_hidden_dim=out_dim,
             proj_out_dim=out_dim,
             proj_depth=2+int(args.dataset.startswith('imagenet')),
             projector_last_bn=True, 
