@@ -20,7 +20,7 @@ For using other frameworks like SimCLR, use the `--framework` option.
 
 
 ```bash
-pretrain_cond.py  \
+python pretrain_cond.py  \
   --logdir $LOGDIR \
   --framework moco --dataset imagenet100 --datadir $IMGENET_100_FOLDER \
   --model resnet50 --batch-size 256 --max-epochs 500 \
