@@ -246,6 +246,98 @@ def simclr(args, t1, t2):
                 trainer=trainer)
 
 
+def barlow_twins(
+        args, t1, t2,
+        out_dim: int=8192,
+        warmup_epochs: int=10,
+        lr_bias_scale: float = 0.024
+):
+    device = idist.device()
+
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        only  = args.ss_only,
+    )
+
+    build_model  = partial(idist.auto_model, sync_bn=True)
+    backbone     = build_model(load_backbone(args))
+
+    sorted_aug_cond = sorted(args.aug_cond or [])
+
+    projector = build_model(
+        AugProjector(
+            args,
+            proj_out_dim=out_dim,
+            proj_depth=3,
+            projector_last_bn=True,
+            projector_last_bn_affine=False,
+            proj_hidden_dim=out_dim
+        )
+    )
+
+    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+
+    SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
+
+    build_optim = lambda x: idist.auto_optim(SGD(x))
+    parameters = list(backbone.parameters())+list(projector.parameters())+ss_params
+    param_weights = [p for p in parameters if p.ndim != 1]
+    param_biases = [p for p in parameters if p.ndim == 1]
+    optimizers = [
+        build_optim([
+            {
+                'params': param_weights,
+                "lr": args.lr,
+            },
+            {
+                'params': param_biases,
+                "lr": args.lr * lr_bias_scale
+             }
+        ])
+    ]
+    schedulers = [
+        optim.lr_scheduler.SequentialLR(
+            optimizers[0],
+            [
+                optim.lr_scheduler.LinearLR(
+                    optimizers[0],
+                    start_factor=1 / warmup_epochs,
+                    end_factor=1,
+                    total_iters=warmup_epochs
+                ),
+                optim.lr_scheduler.CosineAnnealingLR(
+                    optimizers[0], args.max_epochs - warmup_epochs
+                )
+            ],
+            milestones=[warmup_epochs]
+        )
+    ]
+
+    trainer = trainers.barlow_twins(
+        backbone=backbone,
+        projector=projector,
+        ss_predictor=ss_predictor,
+        t1=t1, t2=t2,
+        optimizers=optimizers,
+        device=device,
+        ss_objective=ss_objective,
+        aug_cond=sorted_aug_cond,
+        batch_size = args.batch_size
+    )
+
+    return dict(backbone=backbone,
+                projector=projector,
+                ss_predictor=ss_predictor,
+                optimizers=optimizers,
+                schedulers=schedulers,
+                trainer=trainer)
+
+
 def byol(args, t1, t2):
     out_dim = 256
     h_dim = 4096
@@ -404,7 +496,7 @@ def main(local_rank, args):
     logger.log_msg(f"Building {args.framework}")
 
 
-    assert args.framework in ["moco", "simsiam", "simclr", "byol"] # TODO
+    assert args.framework in ["moco", "simsiam", "simclr", "byol", "barlow_twins"] # TODO
 
     if args.framework == 'simsiam':
         models = simsiam(args, t1, t2)

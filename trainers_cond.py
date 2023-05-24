@@ -238,6 +238,65 @@ def simclr(backbone,
     engine = Engine(training_step)
     return engine
 
+def barlow_twins(backbone,
+           projector: AugProjector,
+           ss_predictor: Dict[str, nn.Module],
+           t1,
+           t2,
+           optimizers,
+           device,
+           batch_size: int,
+           ss_objective: SSObjective,
+           aug_cond: List[str],
+           bt_lambda: float = 0.0051,
+           ):
+    def off_diagonal(x):
+        # return a flattened view of the off-diagonal elements of a square matrix
+        n, m = x.shape
+        assert n == m
+        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+    def training_step(engine, batch):
+        backbone.train()
+        projector.train()
+
+        for o in optimizers:
+            o.zero_grad()
+
+        (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
+        aug_keys = sorted(aug_cond)
+        d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
+
+        y1 = backbone(x1)
+        y2 = backbone(x2)
+        z1 = projector(y1, d1_cat)
+        z2 = projector(y2, d2_cat)
+
+        c = z1.T @ z2
+
+        c = c / batch_size
+        c = idist.utils.all_reduce(c)
+
+        on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
+        off_diag = off_diagonal(c).pow_(2).sum()
+        loss = on_diag + bt_lambda * off_diag
+
+        outputs = dict(loss=loss, z1=z1, z2=z2)
+
+        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
+        (loss + ss_losses['total']).backward()
+        for k, v in ss_losses.items():
+            outputs[f'ss/{k}'] = v
+
+        for o in optimizers:
+            o.step()
+
+        return outputs
+
+    engine = Engine(training_step)
+    return engine
+
 
 def byol(backbone,
          projector,
