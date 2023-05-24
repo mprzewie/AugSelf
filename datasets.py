@@ -1,18 +1,23 @@
 import os
 import random
+from math import ceil
+from glob import glob
 import json
 from scipy.io import loadmat
 from PIL import Image
+import numpy as np
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
 import torch
 import torch.nn as nn
 from torch.utils.data import random_split, ConcatDataset, Subset
+import torch.nn.functional as F
 
 from transforms import MultiView, RandomResizedCrop, ColorJitter, GaussianBlur, RandomRotation, KRandomResizedCrop
 from torchvision import transforms as T
 from torchvision.datasets import STL10, CIFAR10, CIFAR100, ImageFolder, ImageNet, Caltech101, Caltech256
+from torchvision.datasets.folder import default_loader
 from datasets_newer_torch import Flowers102, Food101, DTD, OxfordIIITPet, StanfordCars, FGVCAircraft
 
 import kornia.augmentation as K
@@ -53,6 +58,100 @@ class ImageNet100(ImageFolder):
         self.classes = classes
         self.class_to_idx = class_to_idx
         self.targets = [s[1] for s in samples]
+
+class FacesInTheWild300W(torch.utils.data.Dataset):
+    """Adapted from https://github.com/ruchikachavhan/amortized-invariance-learning-ssl/blob/main/test_datasets.py"""
+    def __init__(self, root, split, mode='indoor_outdoor', transform=None, loader=default_loader, download=False, shots=None):
+        self.root = root
+        self.split = split
+        self.mode = mode
+        self.transform = transform
+        self.loader = loader
+        images = []
+        keypoints = []
+        if 'indoor' in mode:
+            print('Loading indoor images')
+            images += glob(os.path.join(self.root, '01_Indoor', '*.png'))
+            keypoints += glob(os.path.join(self.root, '01_Indoor', '*.pts'))
+        if 'outdoor' in mode:
+            print('Loading outdoor images')
+            images += glob(os.path.join(self.root, '02_Outdoor', '*.png'))
+            keypoints += glob(os.path.join(self.root, '02_Outdoor', '*.pts'))
+        images = list(sorted(images))[0:len(images) - 1]
+        keypoints = list(sorted(keypoints))
+
+        split_path = os.path.join(self.root, f'{mode}_{split}.npy')
+        # while not os.path.exists(split_path):
+        self.generate_dataset_splits(len(images), shots=shots)
+        split_idxs = np.load(split_path)
+        print(split, split_path, max(split_idxs), len(images), len(keypoints))
+        self.images = [images[i] for i in split_idxs]
+        self.keypoints = [keypoints[i] for i in split_idxs]
+
+    def generate_dataset_splits(self, l, split_sizes=[0.3, 0.3, 0.4], shots=None):
+        np.random.seed(0)
+        print(split_sizes)
+        assert sum(split_sizes) == 1
+        idxs = np.arange(l)
+        np.random.shuffle(idxs)
+        if shots is None:
+            split1, split2 = int(l * split_sizes[0]), int(l * sum(split_sizes[:2]))
+            train_idx = idxs[:split1]
+            valid_idx = idxs[split1:split2]
+            test_idx = idxs[split2:]
+        else:
+            split1, split2 = int(l * split_sizes[0]), int(l * sum(split_sizes[:2]))
+            print("fs", shots, split2, split1)
+            shot_split = int(l * shots)
+            train_idx = idxs[:shot_split // 2]
+            valid_idx = idxs[shot_split // 2:shot_split]
+            test_idx = idxs[shot_split:]
+        # print(max(train_idx), max(valid_idx), max(test_idx))
+        print("Generated train")
+        np.save(os.path.join(self.root, f'{self.mode}_train'), train_idx)
+        np.save(os.path.join(self.root, f'{self.mode}_valid'), valid_idx)
+        print("Generated train and val")
+        np.save(os.path.join(self.root, f'{self.mode}_test'), test_idx)
+        print("Generated test")
+
+    def __getitem__(self, index):
+        # get image in original resolution
+        path = self.images[index]
+        image = self.loader(path)
+        h, w = image.height, image.width
+        min_side = min(h, w)
+
+        # get keypoints in original resolution
+        keypoint = open(self.keypoints[index], 'r').readlines()
+        keypoint = keypoint[3:-1]
+        keypoint = [s.strip().split(' ') for s in keypoint]
+        keypoint = torch.tensor([(float(x), float(y)) for x, y in keypoint])
+        bbox_x1, bbox_x2 = keypoint[:, 0].min().item(), keypoint[:, 0].max().item()
+        bbox_y1, bbox_y2 = keypoint[:, 1].min().item(), keypoint[:, 1].max().item()
+        bbox_width = ceil(bbox_x2 - bbox_x1)
+        bbox_height = ceil(bbox_y2 - bbox_y1)
+        bbox_length = max(bbox_width, bbox_height)
+
+        image = T.functional.crop(image, top=bbox_y1, left=bbox_x1, height=bbox_length, width=bbox_length)
+        keypoint = torch.tensor([(x - bbox_x1, y - bbox_y1) for x, y in keypoint])
+
+        h, w = image.height, image.width
+        min_side = min(h, w)
+
+        if self.transform is not None:
+            image = self.transform(image)
+        new_h, new_w = image.shape[1:]
+
+        keypoint = torch.tensor([[
+            ((x - ((w - min_side) / 2)) / min_side) * new_w,
+            ((y - ((h - min_side) / 2)) / min_side) * new_h,
+        ] for x, y in keypoint])
+        keypoint = keypoint.flatten()
+        keypoint = F.normalize(keypoint, dim=0)
+        return image, keypoint
+
+    def __len__(self):
+        return len(self.images)
 
 class Pets(ImageList):
     def __init__(self, root, split, transform=None):
