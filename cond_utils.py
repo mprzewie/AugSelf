@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 from torch import nn as nn
 
@@ -44,7 +46,7 @@ class AUG_DESC_TYPES:
 
 class AugProjector(nn.Module):
     def __init__(
-            self, args, proj_out_dim: int, proj_depth: int = 2
+            self, args, proj_out_dim: int, proj_depth: int = 2, proj_hidden_dim: Optional[int] = None, projector_last_bn: bool = False, projector_last_bn_affine: bool = True,
     ):
         super().__init__()
         self.num_backbone_features = args.num_backbone_features
@@ -55,6 +57,7 @@ class AugProjector(nn.Module):
         self.aug_cond = args.aug_cond or []
         self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
         self.aug_inj_type = args.aug_inj_type
+        self.projector_last_bn = projector_last_bn
 
         print("Projector aug strategy:", self.aug_treatment)
         print("Conditioning projector on augmentations:", self.aug_subset_sizes)
@@ -148,11 +151,13 @@ class AugProjector(nn.Module):
             )
             self.projector = load_mlp(
                 projector_in,
-                args.num_backbone_features,
+                proj_hidden_dim or args.num_backbone_features,
                 proj_out_dim,
                 num_layers=proj_depth,
-                last_bn=False
+                last_bn=projector_last_bn,
+                last_bn_affine=projector_last_bn_affine,
             )
+            print(self.projector)
 
     def forward(self, x: torch.Tensor, aug_desc: torch.Tensor):
 
