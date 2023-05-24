@@ -65,11 +65,23 @@ def simsiam(args, t1, t2):
     cond_projector = build_model(
         AugProjector(
             args,
+            proj_hidden_dim=out_dim,
+            proj_out_dim=out_dim,
+            proj_depth=2+int(args.dataset.startswith('imagenet')),
+            projector_last_bn=True, 
+            projector_last_bn_affine=True
+            
+        )
+    )
+    """
+    cond_projector = build_model(
+        AugProjector(
+            args,
             proj_out_dim=out_dim,
             proj_depth=2+int(args.dataset.startswith('imagenet')),
         )
     )
-    
+    """
     predictor    = build_model(load_mlp(out_dim,
                                         out_dim // 4,
                                         out_dim,
@@ -260,6 +272,8 @@ def byol(args, t1, t2):
             args,
             proj_out_dim=out_dim,
             proj_depth=2,
+            projector_last_bn=False,
+            proj_hidden_dim=h_dim
         )
     )
 
