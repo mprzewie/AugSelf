@@ -15,13 +15,15 @@ import torch.backends.cudnn as cudnn
 from ignite.engine import Events
 import ignite.distributed as idist
 
+import trainers_cond
 from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES, \
-    AUG_INJECTION_TYPES
+    AUG_INJECTION_TYPES, AugSSPredictor
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
 from trainers import SSObjective
-from utils import Logger
+from utils import Logger, get_first_free_port
+import vits
 
 """
 ('crop',  crop,  4, 'regression'),
@@ -50,39 +52,34 @@ def simsiam(args, t1, t2):
     backbone     = build_model(load_backbone(args))
 
     sorted_aug_cond = sorted(args.aug_cond)
-    n_aug_feats  = sum([AUG_DESC_SIZE_CONFIG[k] for k in sorted_aug_cond])
-    """
-    cond_projector    = build_model(
-        load_mlp(
-            args.num_backbone_features + n_aug_feats,
-            out_dim,
-            out_dim,
-            num_layers=2+int(args.dataset.startswith('imagenet')),
-            last_bn=True
-        )
-    )
-    """
+    n_aug_feats = sum([AUG_DESC_SIZE_CONFIG[k] for k in sorted_aug_cond])
+
+
     cond_projector = build_model(
         AugProjector(
             args,
+            proj_hidden_dim=out_dim,
             proj_out_dim=out_dim,
             proj_depth=2+int(args.dataset.startswith('imagenet')),
+            projector_last_bn=True,
+            projector_last_bn_affine=True
+
         )
     )
-    
-    predictor    = build_model(load_mlp(out_dim,
-                                        out_dim // 4,
-                                        out_dim,
-                                        num_layers=2,
-                                        last_bn=False))
-
+    predictor    = build_model(
+        load_mlp(out_dim,
+        out_dim // 4,
+        out_dim,
+        num_layers=2,
+        last_bn=False)
+    )
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters())+ss_params),
+    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters()) +ss_params),
                   build_optim(list(predictor.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
@@ -133,21 +130,6 @@ def moco(args, t1, t2):
         )
     )
 
-    # if args.aug_cnt_lambda > 0 and args.aug_treatment == AUG_STRATEGY.mlp:
-    #     aug_bkb_projector = build_model(
-    #         load_mlp(
-    #             n_in=(
-    #                 args.num_backbone_features
-    #                 if args.aug_desc_type == AUG_DESC_TYPES.absolute
-    #                 else 2 * args.num_backbone_features
-    #             ),
-    #             n_hidden=args.aug_nn_width,
-    #             n_out=args.aug_processor_out,
-    #             num_layers=args.aug_nn_depth,
-    #         )
-    #     )
-    # else:
-    #     aug_bkb_projector = nn.Identity()
 
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
@@ -173,10 +155,6 @@ def moco(args, t1, t2):
             optimizers=optimizers,
             device=device,
             ss_objective=ss_objective,
-            # aug_desc_type=args.aug_desc_type,
-            # aug_contrastive_loss_lambda=args.aug_cnt_lambda,
-            # aug_bkb_projector=aug_bkb_projector,
-            # aug_treatment=args.aug_treatment,
             aug_cond=args.aug_cond or []
     )
 
@@ -186,6 +164,107 @@ def moco(args, t1, t2):
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
+
+def mocov3(
+        args, t1, t2,
+        # vit-b args
+        stop_grad_conv1: bool=True,
+        moco_dim: int=256,
+        moco_mlp_dim: int=4096,
+        T: float=0.2,
+        warmup_epochs: int=40,
+
+
+):
+
+    # lr = 1.5e-4
+    # wd = .1
+    #--optimizer = adamw - -lr = 1.5e-4 - -weight - decay = .1 \
+    # --epochs = 300 - -warmup - epochs = 40 \
+    # --stop - grad - conv1 - -moco - m - cos - -moco - t = .2 \
+    device = idist.device()
+
+    ss_objective = SSObjective(
+        crop=args.ss_crop,
+        color=args.ss_color,
+        flip=args.ss_flip,
+        blur=args.ss_blur,
+        only=args.ss_only,
+    )
+
+    sorted_aug_cond = sorted(args.aug_cond or [])
+
+    build_model  = partial(idist.auto_model, sync_bn=True)
+    backbone = build_model(load_backbone(args))
+
+
+    projector: AugProjector= build_model(
+        AugProjector(
+            args,
+            proj_hidden_dim=moco_mlp_dim,
+            proj_out_dim=moco_dim,
+            proj_depth=3,
+            projector_last_bn=True, projector_last_bn_affine=False
+        )
+    )
+
+    predictor =  build_model(
+        load_mlp(moco_dim,
+        moco_mlp_dim,
+        moco_dim,
+        num_layers=2,
+        last_bn=True, last_bn_affine=False)
+    )
+
+    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+
+    AdamW = partial(optim.AdamW, lr=args.lr, weight_decay=args.wd)
+    build_optim = lambda x: idist.auto_optim(AdamW(x))
+    optimizers = [
+        build_optim(list(backbone.parameters())+list(projector.parameters()) + list(predictor.parameters())+ss_params)
+    ]
+    schedulers = [
+        optim.lr_scheduler.SequentialLR(
+            optimizers[0],
+            [
+                optim.lr_scheduler.LinearLR(
+                    optimizers[0],
+                    start_factor=1 / warmup_epochs,
+                    end_factor=1,
+                    total_iters=warmup_epochs
+                ),
+                optim.lr_scheduler.CosineAnnealingLR(
+                    optimizers[0], args.max_epochs - warmup_epochs
+                )
+            ],
+            milestones=[warmup_epochs]
+        )
+    ]
+    trainer = trainers_cond.mocov3(
+        backbone=backbone,
+        projector=projector,
+        predictor=predictor,
+        ss_predictor=ss_predictor,
+        t1=t1,t2=t2,
+        optimizers=optimizers,
+        device=device,
+        ss_objective=ss_objective,
+        aug_cond=sorted_aug_cond,
+    )
+
+    return dict(
+        backbone=backbone,
+        projector=projector,
+        ss_predictor=ss_predictor,
+        optimizers=optimizers,
+        schedulers=schedulers,
+        trainer=trainer
+    )
+
+
+
 
 def simclr(args, t1, t2):
     out_dim = 128
@@ -201,13 +280,18 @@ def simclr(args, t1, t2):
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
-    cond_projector : AugProjector= build_model(
+
+    sorted_aug_cond = sorted(args.aug_cond)
+
+
+    projector = build_model(
         AugProjector(
             args,
             proj_out_dim=out_dim,
-            proj_depth=2+int(args.dataset.startswith('imagenet')),
+            proj_depth=2,
         )
     )
+
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
     ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
@@ -217,22 +301,114 @@ def simclr(args, t1, t2):
     optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters())+ss_params)]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
-    trainer = trainers.simclr(backbone=backbone,
-                              projector=cond_projector,
-                              ss_predictor=ss_predictor,
-                              t1=t1, t2=t2,
-                              optimizers=optimizers,
-                              device=device,
-                              ss_objective=ss_objective,
-                              aug_cond=args.aug_cond or [])
+    trainer = trainers.simclr(
+        backbone=backbone,
+        projector=projector,
+        ss_predictor=ss_predictor,
+        t1=t1, t2=t2,
+        optimizers=optimizers,
+        device=device,
+        ss_objective=ss_objective,
+        aug_cond=sorted_aug_cond,
+    )
 
     return dict(backbone=backbone,
-                projector=cond_projector,
+                projector=projector,
                 ss_predictor=ss_predictor,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
 
+def barlow_twins(
+        args, t1, t2,
+        out_dim: int=8192,
+        warmup_epochs: int=10,
+        lr_bias_scale: float = 0.024
+):
+    device = idist.device()
+
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        only  = args.ss_only,
+    )
+
+    build_model  = partial(idist.auto_model, sync_bn=True)
+    backbone     = build_model(load_backbone(args))
+
+    sorted_aug_cond = sorted(args.aug_cond or [])
+
+    projector = build_model(
+        AugProjector(
+            args,
+            proj_out_dim=out_dim,
+            proj_depth=3,
+            projector_last_bn=True,
+            projector_last_bn_affine=False,
+            proj_hidden_dim=out_dim
+        )
+    )
+
+    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+
+    SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
+
+    build_optim = lambda x: idist.auto_optim(SGD(x))
+    parameters = list(backbone.parameters())+list(projector.parameters())+ss_params
+    param_weights = [p for p in parameters if p.ndim != 1]
+    param_biases = [p for p in parameters if p.ndim == 1]
+    optimizers = [
+        build_optim([
+            {
+                'params': param_weights,
+                "lr": args.lr,
+            },
+            {
+                'params': param_biases,
+                "lr": args.lr * lr_bias_scale
+             }
+        ])
+    ]
+    schedulers = [
+        optim.lr_scheduler.SequentialLR(
+            optimizers[0],
+            [
+                optim.lr_scheduler.LinearLR(
+                    optimizers[0],
+                    start_factor=1 / warmup_epochs,
+                    end_factor=1,
+                    total_iters=warmup_epochs
+                ),
+                optim.lr_scheduler.CosineAnnealingLR(
+                    optimizers[0], args.max_epochs - warmup_epochs
+                )
+            ],
+            milestones=[warmup_epochs]
+        )
+    ]
+
+    trainer = trainers.barlow_twins(
+        backbone=backbone,
+        projector=projector,
+        ss_predictor=ss_predictor,
+        t1=t1, t2=t2,
+        optimizers=optimizers,
+        device=device,
+        ss_objective=ss_objective,
+        aug_cond=sorted_aug_cond,
+        batch_size = args.batch_size
+    )
+
+    return dict(backbone=backbone,
+                projector=projector,
+                ss_predictor=ss_predictor,
+                optimizers=optimizers,
+                schedulers=schedulers,
+                trainer=trainer)
 
 def byol(args, t1, t2):
     out_dim = 256
@@ -254,7 +430,7 @@ def byol(args, t1, t2):
 
     sorted_aug_cond = sorted(args.aug_cond)
     n_aug_feats  = sum([AUG_DESC_SIZE_CONFIG[k] for k in sorted_aug_cond])
-    
+
     cond_projector = build_model(
         AugProjector(
             args,
@@ -353,18 +529,19 @@ def main(local_rank, args):
         job_type="pretrain"
     )
 
-    with (Path(args.logdir) / "rerun.sh").open("w") as f:
-        print("python", " ".join(sys.argv), file=f)
+    if idist.get_rank() == 0:
+        with (Path(args.logdir) / "rerun.sh").open("w") as f:
+            print("python", " ".join(sys.argv), file=f)
 
-    with (Path(args.logdir) / "args.json").open("w") as f:
-        json.dump(
-            {
-                k: v if isinstance(v, (int, str, bool, float)) else str(v)
-                for (k, v) in vars(args).items()
-            },
-            f,
-            indent=2,
-        )
+        with (Path(args.logdir) / "args.json").open("w") as f:
+            json.dump(
+                {
+                    k: v if isinstance(v, (int, str, bool, float)) else str(v)
+                    for (k, v) in vars(args).items()
+                },
+                f,
+                indent=2,
+            )
 
     # DATASETS
     logger.log_msg(f"{args.seed=}")
@@ -390,7 +567,6 @@ def main(local_rank, args):
     logger.log_msg(f"Building {args.framework}")
 
 
-    assert args.framework in ["moco", "simsiam", "simclr", "byol"] # TODO
 
     if args.framework == 'simsiam':
         models = simsiam(args, t1, t2)
@@ -398,10 +574,14 @@ def main(local_rank, args):
         models = moco(args, t1, t2)
     elif args.framework == 'simclr':
         models = simclr(args, t1, t2)
+    elif args.framework == "barlow_twins":
+        models = barlow_twins(args, t1, t2)
     elif args.framework == 'byol':
         models = byol(args, t1, t2)
     elif args.framework == 'swav':
         models = swav(args, t1, t2)
+    elif args.framework == "mocov3":
+        models = mocov3(args, t1, t2)
 
     trainer   = models['trainer']
     evaluator = trainers.nn_evaluator(backbone=models['backbone'],
@@ -462,40 +642,56 @@ def main(local_rank, args):
     def save_ckpt(engine):
         logger.save(engine, **models)
 
+    @trainer.on(Events.EPOCH_COMPLETED(every=1))
+    def save_last_ckpt(engine):
+        logger.save(engine, override_name="ckpt-last.pth", **models)
+
     if args.resume != -1:
         @trainer.on(Events.STARTED)
         def load_state(engine):
-            ckpt = torch.load(os.path.join(args.logdir, f'ckpt-{args.resume}.pth'), map_location='cpu')
+            resume_path = Path(args.logdir) / f'ckpt-{args.resume}.pth'
+            assert resume_path.exists(), resume_path
+
+            ckpt = torch.load(resume_path, map_location='cpu')
             for k, v in models.items():
-                if isinstance(v, nn.parallel.DistributedDataParallel):
-                    v = v.module
+                try:
+                    if isinstance(v, nn.parallel.DistributedDataParallel):
+                        v = v.module
 
-                if hasattr(v, 'state_dict'):
-                    v.load_state_dict(ckpt[k])
+                    if hasattr(v, 'state_dict'):
+                        v.load_state_dict(ckpt[k])
 
-                if type(v) is list and hasattr(v[0], 'state_dict'):
-                    for i, x in enumerate(v):
-                        x.load_state_dict(ckpt[k][i])
+                    if type(v) is list and hasattr(v[0], 'state_dict'):
+                        for i, x in enumerate(v):
+                            x.load_state_dict(ckpt[k][i])
 
-                if type(v) is dict and k == 'ss_predictor':
-                    for y, x in v.items():
-                        x.load_state_dict(ckpt[k][y])
+                    if type(v) is dict and k == 'ss_predictor':
+                        for y, x in v.items():
+                            x.load_state_dict(ckpt[k][y])
+
+                    logger.log_msg(f"Successfully loaded {k}")
+                except Exception as e:
+                    logger.log_msg(f"Error loading {k}: {e}")
+                    if k == "backbone":
+                        raise
 
     trainer.run(trainloader, max_epochs=args.max_epochs)
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--logdir', type=str, required=True)
-    parser.add_argument('--resume', type=int, default=-1)
+    parser.add_argument('--resume', default=None)
     parser.add_argument('--dataset', type=str, default='stl10')
     parser.add_argument('--datadir', type=str, default='/data')
     parser.add_argument('--batch-size', type=int, default=256)
     parser.add_argument('--max-epochs', type=int, default=200)
     parser.add_argument('--num-workers', type=int, default=4)
-    parser.add_argument('--model', type=str, default='resnet18')
+    parser.add_argument('--model', type=str, default='resnet18', choices=["resnet18", "resnet50", "vit_base", "vit_small"])
     parser.add_argument('--distributed', action='store_true')
 
-    parser.add_argument('--framework', type=str, default='simsiam')
+    parser.add_argument('--framework', type=str, default='simsiam',
+                        choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3"]
+                        )
 
     parser.add_argument('--base-lr', type=float, default=0.03)
     parser.add_argument('--wd', type=float, default=5e-4)
@@ -541,6 +737,19 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        "--ss-aug-inj-type", type=str, default=AUG_INJECTION_TYPES.proj_none,
+        choices=[
+            AUG_INJECTION_TYPES.proj_cat,
+            AUG_INJECTION_TYPES.proj_add,
+            AUG_INJECTION_TYPES.proj_mul,
+            AUG_INJECTION_TYPES.img_cat,
+            AUG_INJECTION_TYPES.proj_none,
+
+        ],
+        help="How to inject raw or mlp-processed aug vectors into SimSiam predictor."
+    )
+
+    parser.add_argument(
         "--aug-cond", nargs="*", type=str, choices=list(AUG_DESC_SIZE_CONFIG.keys()),
         help="Augmentations to condition the projector on"
     )
@@ -579,6 +788,12 @@ if __name__ == '__main__':
         with idist.Parallel() as parallel:
             parallel.run(main, args)
     else:
-        with idist.Parallel('nccl', nproc_per_node=torch.cuda.device_count()) as parallel:
+        free_port = get_first_free_port()
+        with idist.Parallel(
+                'nccl',
+                nproc_per_node=torch.cuda.device_count(),
+                master_port=free_port
+                # init_method=f"tcp://0.0.0.0:{free_port}"
+        ) as parallel:
             parallel.run(main, args)
 

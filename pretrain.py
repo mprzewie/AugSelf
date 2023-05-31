@@ -16,7 +16,8 @@ from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers
 from trainers import SSObjective
-from utils import Logger
+from utils import Logger, get_first_free_port
+
 
 def simsiam(args, t1, t2):
     out_dim = 2048
@@ -353,6 +354,10 @@ def main(local_rank, args):
     @trainer.on(Events.EPOCH_COMPLETED(every=args.ckpt_freq))
     def save_ckpt(engine):
         logger.save(engine, **models)
+    
+    @trainer.on(Events.EPOCH_COMPLETED(every=1))
+    def save_last_ckpt(engine):
+        logger.save(engine, override_name="ckpt-last.pth", **models)
 
     if args.resume is not None:
         @trainer.on(Events.STARTED)
@@ -413,6 +418,12 @@ if __name__ == '__main__':
         with idist.Parallel() as parallel:
             parallel.run(main, args)
     else:
-        with idist.Parallel('nccl', nproc_per_node=torch.cuda.device_count()) as parallel:
+        free_port = get_first_free_port()
+        with idist.Parallel(
+                'nccl',
+                master_port=free_port,
+                nproc_per_node=torch.cuda.device_count(),
+                # init_method=f"tcp://0.0.0.0:{free_port}"
+        ) as parallel:
             parallel.run(main, args)
 

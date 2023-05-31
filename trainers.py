@@ -10,6 +10,7 @@ from ignite.engine import Engine
 import ignite.distributed as idist
 
 from transforms import extract_diff
+from tqdm import tqdm
 
 
 class SSObjective:
@@ -408,7 +409,7 @@ def collect_features(backbone,
     with torch.no_grad():
         features = []
         labels   = []
-        for i, (x, y) in enumerate(dataloader):
+        for i, (x, y) in tqdm(enumerate(dataloader), "collecting features..."):
             if x.ndim == 5:
                 _, n, c, h, w = x.shape
                 x = x.view(-1, c, h, w)

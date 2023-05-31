@@ -24,7 +24,7 @@ class ResnetOutBlocks(ResNet):
         l4 = x = self.layer4(x)
 
         x = self.avgpool(x)
-        x = torch.flatten(x, 1)
+        backbone_out = x = torch.flatten(x, 1)
         x = self.fc(x)
 
         return dict(
@@ -34,6 +34,7 @@ class ResnetOutBlocks(ResNet):
             l2=l2,
             l3=l3,
             l4=l4,
+            backbone_out = backbone_out,
             out=x
         )
 

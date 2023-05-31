@@ -1,5 +1,7 @@
 import random
 from typing import Union, Tuple, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as NF
@@ -9,7 +11,10 @@ import kornia
 import kornia.augmentation as K
 from kornia import adjust_saturation, adjust_hue, pi
 from kornia.augmentation.utils import _transform_input, _validate_input_dtype
+
+
 import kornia.augmentation.functional as KF
+from torchvision.transforms import Normalize
 
 
 class MultiView:
@@ -26,7 +31,7 @@ class RandomResizedCrop(T.RandomResizedCrop):
         W, H = F._get_image_size(img)
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
         img = F.resized_crop(img, i, j, h, w, self.size, self.interpolation)
-        tensor = F.to_tensor(img)
+        tensor = F.to_tensor(img) if not isinstance(img, torch.Tensor) else img
         return tensor, torch.tensor([i/H, j/W, h/H, w/W], dtype=torch.float)
 
 
@@ -59,7 +64,7 @@ class ColorJitter(K.ColorJitter):
 
         x_means = x.mean(dim=[2,3])
         x_new_means = x_new.mean(dim=[2,3])
-        params["x_means_diff"] = (x_means - x_new_means).cpu() #TODO
+        params["x_means_diff"] = (x_means - x_new_means).cpu()
 
         return x_new
 
@@ -114,6 +119,11 @@ class KRandomResizedCrop(K.RandomResizedCrop):
         return KF.apply_crop(input, params, self.flags)
 
 
+class KRandomResizedCrop(K.RandomResizedCrop):
+    def apply_transform(self, input: torch.Tensor, params: Dict[str, torch.Tensor]) -> torch.Tensor:
+        return KF.apply_crop(input, params, self.flags)
+
+
 def _extract_w(t):
     if isinstance(t, GaussianBlur):
         m = t._params['batch_prob']
@@ -129,9 +139,10 @@ def _extract_w(t):
         w[to_apply, 2] = (t._params['saturation_factor'] - 1) / (t.saturation[1]-t.saturation[0])
         w[to_apply, 3] = t._params['hue_factor'] / (t.hue[1]-t.hue[0])
 
-        x_means_diff = t._params["x_means_diff"]
-        x_means_batch = torch.zeros(to_apply.shape[0], x_means_diff.shape[1])
-        x_means_batch[to_apply] = x_means_diff
+        x_means_batch = torch.zeros(to_apply.shape[0], 3)
+        if "x_means_diff" in t._params:
+            x_means_diff = t._params["x_means_diff"]
+            x_means_batch[to_apply] = x_means_diff
 
         return w, x_means_batch
 
@@ -180,10 +191,11 @@ def extract_diff(transforms1, transforms2, crop1, crop2):
         elif isinstance(t1, K.Normalize):
             pass
 
-        elif isinstance(t1, K.ColorJitter):
+        elif isinstance(t1, ColorJitter):
             w1, x_means_diff_1 = _extract_w(t1)
             w2, x_means_diff_2 = _extract_w(t2)
             diff['color'] = w1-w2
+            diff["color_diff"] = x_means_diff_1 - x_means_diff_2
 
         elif isinstance(t1, (nn.Identity, nn.Sequential)):
             pass
@@ -208,10 +220,14 @@ def extract_aug_descriptors(
     transforms1, crop1
 ):
     results = {}
+    f1 = None
     for t1 in transforms1:
         if isinstance(t1, K.RandomHorizontalFlip):
             f1 = t1._params['batch_prob']
             break
+
+    if f1 is None:
+        f1 = torch.zeros(len(crop1)).bool()
 
     center1 = crop1[:, :2] + crop1[:, 2:] / 2
     center1[f1, 1] = 1 - center1[f1, 1]
@@ -231,7 +247,7 @@ def extract_aug_descriptors(
         elif isinstance(t1, K.Normalize):
             pass
 
-        elif isinstance(t1, K.ColorJitter):
+        elif isinstance(t1, ColorJitter):
             w1, x_means_batch = _extract_w(t1)
             results['color'] = w1
             results["color_diff"] = x_means_batch
@@ -246,7 +262,8 @@ def extract_aug_descriptors(
         elif isinstance(t1, K.RandomSolarize):
             w1 = _extract_w(t1)
             results['sol'] = w1
-
+        elif isinstance(t1, Normalize):
+            pass
         else:
             raise Exception(f'Unknown transform: {str(t1.__class__)}')
 

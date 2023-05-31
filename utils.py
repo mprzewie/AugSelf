@@ -68,6 +68,25 @@ def get_engine_mock(ckpt_path: str):
 
     return engine
 
+def get_first_free_port(start_port: int=2222, n_ports_to_check: int =100) -> int:
+    """
+    A shitfix for two distributed trainings on one device, see:
+    https://github.com/pytorch/ignite/issues/2312
+    Solution based on:
+    https://stackoverflow.com/questions/2470971/fast-way-to-test-if-a-port-is-in-use-using-python
+    """
+    def is_port_in_use(port: int) -> bool:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(('localhost', port)) == 0
+
+    for port in range(start_port, start_port + n_ports_to_check):
+        print(f"checking {port=}")
+        if not is_port_in_use(port):
+            print(f"{port=} seems to be free")
+            return port
+
+    raise ConnectionError(f"Free port not found with {start_port=} and {n_ports_to_check=}")
 
 class Logger(object):
 
@@ -119,7 +138,10 @@ class Logger(object):
                 msg += f' [{k} {v}]'
 
             if self.writer is not None:
-                self.writer.add_scalar(k, v, global_step)
+                try:
+                    self.writer.add_scalar(k, v, global_step)
+                except:
+                    pass
             wandb_log[k] = v
 
         if wandb.run is not None:
@@ -129,7 +151,7 @@ class Logger(object):
         if print_msg:
             logging.info(msg)
 
-    def save(self, engine, **kwargs):
+    def save(self, engine, override_name: Optional[str]=None, **kwargs):
         if idist.get_rank() > 0:
             return
 
@@ -147,5 +169,6 @@ class Logger(object):
             if type(v) is dict and k == 'ss_predictor':
                 state[k] = { y: x.state_dict() for y, x in v.items() }
 
-        torch.save(state, os.path.join(self.logdir, f'ckpt-{engine.state.epoch}.pth'))
+        filename = override_name or  f'ckpt-{engine.state.epoch}.pth'
+        torch.save(state, os.path.join(self.logdir, filename))
 

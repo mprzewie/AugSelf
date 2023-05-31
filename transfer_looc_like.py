@@ -218,7 +218,7 @@ def main_worker(gpu, ngpus_per_node, args):
     args.origin_run_name = logdir.name
 
     logger = Logger(
-        logdir=logdir, resume=True, wandb_suffix=f"looc-like_{args.dataset}", args=args,
+        logdir=logdir, resume=True, wandb_suffix=f"looc-like_{args.dataset_name}", args=args,
         job_type="eval_looc-like"
     )
 
