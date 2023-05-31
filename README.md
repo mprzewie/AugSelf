@@ -65,3 +65,9 @@ CUDA_VISIBLE_DEVICES=0 python transfer_linear_eval.py \
     --metric top1
 ```
 
+## Acknowledgements
+
+This codebase is built upon [this code](https://github.com/hankook/AugSelf) for the excellent 
+**[Improving Transferability of Representations via Augmentation-Aware Self-Supervision](https://arxiv.org/abs/2111.09613)** 
+by Hankook Lee, Kibok Lee, Kimin Lee, Honglak Lee, and Jinwoo Shin. 
+We are very thankful to the authors for providing an excellent-quality reproducible code to the community and guiding us on running it.
