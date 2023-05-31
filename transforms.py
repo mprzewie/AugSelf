@@ -1,5 +1,6 @@
 import random
 from typing import Union, Tuple, List, Optional, Dict
+from typing import Union, Tuple, List, Optional, Dict
 
 import torch
 import torch.nn as nn
@@ -112,7 +113,6 @@ class RandomRotation(K.AugmentationBase2D):
         degrees = params['degrees']
         input = torch.stack([torch.rot90(x, k, (1, 2)) for x, k in zip(input, degrees.tolist())], 0)
         return input
-
 
 class KRandomResizedCrop(K.RandomResizedCrop):
     def apply_transform(self, input: torch.Tensor, params: Dict[str, torch.Tensor]) -> torch.Tensor:

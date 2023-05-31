@@ -131,8 +131,8 @@ def moco(backbone,
 
         aug_keys = sorted(aug_cond)
 
-        d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
-        d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
+        d1_cat = torch.cat([aug_d1[k] for k in aug_keys], dim=1)
+        d2_cat = torch.cat([aug_d2[k] for k in aug_keys], dim=1)
 
         y1 = backbone(x1)
         z1 = F.normalize(
@@ -201,7 +201,7 @@ def mocov3(
             list(target_projector.parameters())
     ):
         p.requires_grad = False
-    
+
     def mv3_contrastive_loss(q, k):
         k = idist.all_gather(k)
         logits = torch.einsum('nc,mc->nm', [q, k]) / T
@@ -245,7 +245,7 @@ def mocov3(
 
 
         loss = mv3_contrastive_loss(q1,k2) + mv3_contrastive_loss(q2,k1)
-            
+
 
         outputs = dict(loss=loss, z1=torch.concat([q1, q2], dim=0), z2=torch.concat([k2, k1], dim=0))
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
@@ -383,6 +383,7 @@ def byol(backbone,
          optimizers,
          device,
          ss_objective,
+         aug_cond: List[str],
          momentum=0.996,
          ):
     target_backbone = deepcopy(backbone)
@@ -398,13 +399,21 @@ def byol(backbone,
         for o in optimizers:
             o.zero_grad()
 
-        x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
+        (x1, x2), (desc1, desc2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
+
+        aug_ks = sorted(aug_cond)
+        d1_cat = torch.cat([desc1[k] for k in aug_ks], dim=1)
+        d2_cat = torch.cat([desc2[k] for k in aug_ks], dim=1)
+
         y1, y2 = backbone(x1), backbone(x2)
-        z1, z2 = projector(y1), projector(y2)
+        y_1d_1 = torch.cat([y1, d1_cat], dim=1)
+        y_2d_2 = torch.cat([y2, d2_cat], dim=1)
+
+        z1, z2 = projector(y1, d1_cat), projector(y2, d2_cat)
         p1, p2 = predictor(z1), predictor(z2)
         with torch.no_grad():
-            tgt1 = target_projector(target_backbone(x1))
-            tgt2 = target_projector(target_backbone(x2))
+            tgt1 = target_projector(target_backbone(x1), d1_cat)
+            tgt2 = target_projector(target_backbone(x2), d2_cat)
 
         loss1 = F.cosine_similarity(p1, tgt2.detach(), dim=-1).mean().mul(-1)
         loss2 = F.cosine_similarity(p2, tgt1.detach(), dim=-1).mean().mul(-1)
@@ -414,7 +423,7 @@ def byol(backbone,
         outputs['z1'] = z1
         outputs['z2'] = z2
 
-        ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
+        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
         (loss + ss_losses['total']).backward()
         for k, v in ss_losses.items():
             outputs[f'ss/{k}'] = v

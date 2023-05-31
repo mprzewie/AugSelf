@@ -2,6 +2,8 @@ import logging
 import os
 from pathlib import Path
 from typing import List, Optional
+import matplotlib
+from matplotlib import pyplot as plt
 
 import ignite.distributed as idist
 import torch
@@ -128,6 +130,10 @@ class Logger(object):
 
             if type(v) is float:
                 msg += f' [{k} {v:.4f}]'
+            elif type(v) in [matplotlib.lines.Line2D, matplotlib.patches.Rectangle] \
+                or (type(v) is list and type(v[0]) is matplotlib.lines.Line2D):
+                wandb.log({f"plot {k}": v})
+                continue
             else:
                 msg += f' [{k} {v}]'
 

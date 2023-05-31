@@ -171,7 +171,7 @@ class AugProjector(nn.Module):
 
             # print(f"pre {x.shape=}, {aug_desc.shape=}")
             if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat:
-                x = torch.concat([x, aug_desc], dim=1)
+                x = torch.cat([x, aug_desc], dim=1)
 
             elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_add:
                 assert aug_desc.shape == x.shape, (x.shape, aug_desc.shape)
