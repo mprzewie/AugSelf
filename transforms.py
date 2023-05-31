@@ -28,7 +28,7 @@ class MultiView:
 
 class RandomResizedCrop(T.RandomResizedCrop):
     def forward(self, img):
-        W, H = F._get_image_size(img)
+        W, H = F.get_image_size(img)
         i, j, h, w = self.get_params(img, self.scale, self.ratio)
         img = F.resized_crop(img, i, j, h, w, self.size, self.interpolation)
         tensor = F.to_tensor(img) if not isinstance(img, torch.Tensor) else img
@@ -113,11 +113,6 @@ class RandomRotation(K.AugmentationBase2D):
         degrees = params['degrees']
         input = torch.stack([torch.rot90(x, k, (1, 2)) for x, k in zip(input, degrees.tolist())], 0)
         return input
-
-class KRandomResizedCrop(K.RandomResizedCrop):
-    def apply_transform(self, input: torch.Tensor, params: Dict[str, torch.Tensor]) -> torch.Tensor:
-        return KF.apply_crop(input, params, self.flags)
-
 
 class KRandomResizedCrop(K.RandomResizedCrop):
     def apply_transform(self, input: torch.Tensor, params: Dict[str, torch.Tensor]) -> torch.Tensor:

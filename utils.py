@@ -99,7 +99,7 @@ class Logger(object):
         handlers = [logging.StreamHandler(os.sys.stdout)]
         if logdir is not None and self.rank == 0:
             if resume is None:
-                os.makedirs(logdir, exist_ok=True)
+                os.makedirs(logdir)
             maybe_setup_wandb(logdir=logdir, args=args, run_name_suffix=wandb_suffix, **wandb_kwargs)
             handlers.append(logging.FileHandler(os.path.join(logdir, 'log.txt')))
             self.writer = SummaryWriter(log_dir=logdir)
