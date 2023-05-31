@@ -4,6 +4,27 @@ Under review.
 
 
 **TL;DR:**  We condition the projector of self-supervised models with augmentation information and demonstrate that this improves their performance during transfer learning.
+
+<p align="center">
+<img width="762" alt="thumbnail" src="cassle_schema.png">
+</p>
+
+
+## Overview
+Self-supervised learning (SSL) is a powerful technique for learning robust representations from unlabeled data. 
+By learning to remain invariant to applied data augmentations, methods such as SimCLR and MoCo are able to reach quality on par with supervised approaches. 
+However, this invariance may be harmful to solving some downstream tasks which depend on traits affected by augmentations used during pretraining, such as color. 
+In this paper, we propose to foster sensitivity to such characteristics in the representation space by modifying the projector network, a common component of self-supervised architectures. 
+Specifically, we supplement the projector with information about augmentations applied to images. 
+In order for the projector to take advantage of this auxiliary guidance when solving the SSL task, the feature extractor learns to preserve the augmentation information in its representations. 
+Our approach, coined **C**onditional **A**ugmentation-aware **S**elf-**s**upervised **Le**arning (**CASSLE**), is directly applicable to typical joint-embedding SSL methods regardless of their objective functions. 
+Moreover, it does not require major changes in the network architecture or prior knowledge of downstream tasks. 
+In addition to an analysis of sensitivity towards different data augmentations, we conduct a series of experiments, which show that CASSLE improves over various SSL methods, reaching state-of-the-art performance in multiple downstream tasks.
+
+## Checkpoints
+
+We provide checkpoints for models pretrained with and without CASSLE in [this Google Drive folder](https://drive.google.com/drive/folders/1_1FFFYzT0-H-fUTm83-oB4Y-Pd6Kp511?usp=sharing).
+
 ## Dependencies
 
 ```bash
