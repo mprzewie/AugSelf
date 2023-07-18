@@ -472,14 +472,15 @@ def shoot_infs(inp_tensor):
 
 
 def swav(backbone,
-         projector,
-         prototypes,
-         ss_predictor,
+         projector: AugProjector,
+         prototypes: nn.Linear,
+         ss_predictor: Dict[str, nn.Module],
          t1,
          t2,
          optimizers,
          device,
-         ss_objective,
+         ss_objective: SSObjective,
+         aug_cond,
          epsilon=0.05,
          n_iters=3,
          temperature=0.1,
@@ -498,9 +499,17 @@ def swav(backbone,
             w = F.normalize(w, dim=1, p=2)
             prototypes.weight.copy_(w)
 
-        x1, x2, d1, d2 = prepare_training_batch(batch, t1, t2, device)
+        (x1, x2), (desc1, desc2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
+        aug_ks = sorted(aug_cond)
+        d1_cat = torch.cat([desc1[k] for k in aug_ks], dim=1)
+        d2_cat = torch.cat([desc2[k] for k in aug_ks], dim=1)
+
         y1, y2 = backbone(x1), backbone(x2)
-        z1, z2 = projector(y1), projector(y2)
+        aug_ks = sorted(aug_cond)
+        d1_cat = torch.cat([desc1[k] for k in aug_ks], dim=1)
+        d2_cat = torch.cat([desc2[k] for k in aug_ks], dim=1)
+
+        z1, z2 = projector(y1, d1_cat), projector(y2, d2_cat)
         z1 = F.normalize(z1, dim=1, p=2)
         z2 = F.normalize(z2, dim=1, p=2)
         p1, p2 = prototypes(z1), prototypes(z2)
@@ -519,7 +528,7 @@ def swav(backbone,
         outputs['z1'] = z1
         outputs['z2'] = z2
 
-        ss_losses = ss_objective(ss_predictor, y1, y2, d1, d2)
+        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
         (loss + ss_losses['total']).backward()
         for k, v in ss_losses.items():
             outputs[f'ss/{k}'] = v

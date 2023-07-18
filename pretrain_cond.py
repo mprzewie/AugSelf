@@ -98,7 +98,7 @@ def simsiam(args, t1, t2):
     return dict(backbone=backbone,
                 projector=cond_projector,
                 predictor=predictor,
-                # ss_predictor=ss_predictor,
+                ss_predictor=ss_predictor,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -469,22 +469,30 @@ def swav(args, t1, t2):
     h_dim = 2048
     device = idist.device()
 
-    # ss_objective = SSObjective(
-    #     crop  = args.ss_crop,
-    #     color = args.ss_color,
-    #     flip  = args.ss_flip,
-    #     blur  = args.ss_blur,
-    #     rot   = args.ss_rot,
-    #     only  = args.ss_only,
-    # )
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        rot   = args.ss_rot,
+        only  = args.ss_only,
+    )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
-    projector    = build_model(load_mlp(args.num_backbone_features,
-                                        h_dim,
-                                        out_dim,
-                                        num_layers=2,
-                                        last_bn=False))
+
+    sorted_aug_cond = sorted(args.aug_cond)
+
+    cond_projector = build_model(
+        AugProjector(
+            args,
+            proj_hidden_dim=h_dim,
+            proj_out_dim=out_dim,
+            proj_depth=2,
+            projector_last_bn=False,
+        )
+    )
+
     prototypes   = build_model(nn.Linear(out_dim, 100, bias=False))
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
@@ -492,20 +500,22 @@ def swav(args, t1, t2):
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params+list(prototypes.parameters()))]
+    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters())+ss_params+list(prototypes.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.swav(backbone=backbone,
-                            projector=projector,
+                            projector=cond_projector,
                             prototypes=prototypes,
                             ss_predictor=ss_predictor,
                             t1=t1, t2=t2,
                             optimizers=optimizers,
                             device=device,
-                            ss_objective=ss_objective)
+                            ss_objective=ss_objective,
+                            aug_cond=sorted_aug_cond
+                            )
 
     return dict(backbone=backbone,
-                projector=projector,
+                projector=cond_projector,
                 prototypes=prototypes,
                 ss_predictor=ss_predictor,
                 optimizers=optimizers,
@@ -682,7 +692,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='simsiam',
-                        choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3"]
+                        choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3", "swav"]
                         )
 
     parser.add_argument('--base-lr', type=float, default=0.03)

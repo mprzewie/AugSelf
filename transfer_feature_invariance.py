@@ -349,8 +349,9 @@ def main(local_rank, args):
                     t_name_to_b_name_to_self_distill[t_name][block_name].append(self_distill.item())
 
                     try:
-                        cca = cca_loss(fn_r, ft_r)
-                        t_name_to_b_name_to_cca[t_name][block_name].append(cca.item())
+                        if not block_name.startswith("l"):
+                            cca = cca_loss(fn_r, ft_r)
+                            t_name_to_b_name_to_cca[t_name][block_name].append(cca.item())
                     except:
                         pass
 
