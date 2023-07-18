@@ -495,9 +495,14 @@ def swav(backbone,
             o.zero_grad()
 
         with torch.no_grad():
-            w = prototypes.weight.data.clone()
+            if isinstance(prototypes, nn.parallel.DistributedDataParallel):
+                p = prototypes.module
+            else:
+                p = prototypes
+
+            w = p.weight.data.clone()
             w = F.normalize(w, dim=1, p=2)
-            prototypes.weight.copy_(w)
+            p.weight.copy_(w)
 
         (x1, x2), (desc1, desc2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
         aug_ks = sorted(aug_cond)
