@@ -43,9 +43,10 @@ def simsiam(args, t1, t2):
         color = args.ss_color,
         flip  = args.ss_flip,
         blur  = args.ss_blur,
-        rot   = args.ss_rot,
-        sol   = args.ss_sol,
         only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
@@ -117,6 +118,9 @@ def moco(args, t1, t2):
         flip  = args.ss_flip,
         blur  = args.ss_blur,
         only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
@@ -186,11 +190,14 @@ def mocov3(
     device = idist.device()
 
     ss_objective = SSObjective(
-        crop=args.ss_crop,
-        color=args.ss_color,
-        flip=args.ss_flip,
-        blur=args.ss_blur,
-        only=args.ss_only,
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
     )
 
     sorted_aug_cond = sorted(args.aug_cond or [])
@@ -277,6 +284,9 @@ def simclr(args, t1, t2):
         flip  = args.ss_flip,
         blur  = args.ss_blur,
         only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
@@ -334,8 +344,10 @@ def barlow_twins(
         flip  = args.ss_flip,
         blur  = args.ss_blur,
         only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
     )
-
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
 
@@ -416,14 +428,16 @@ def byol(args, t1, t2):
     h_dim = 4096
     device = idist.device()
 
-    # ss_objective = SSObjective(
-    #     crop  = args.ss_crop,
-    #     color = args.ss_color,
-    #     flip  = args.ss_flip,
-    #     blur  = args.ss_blur,
-    #     rot   = args.ss_rot,
-    #     only  = args.ss_only,
-    # )
+    ss_objective = SSObjective(
+        crop  = args.ss_crop,
+        color = args.ss_color,
+        flip  = args.ss_flip,
+        blur  = args.ss_blur,
+        only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
+    )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = build_model(load_backbone(args))
@@ -474,8 +488,10 @@ def swav(args, t1, t2):
         color = args.ss_color,
         flip  = args.ss_flip,
         blur  = args.ss_blur,
-        rot   = args.ss_rot,
         only  = args.ss_only,
+        color_diff=args.ss_color_diff,
+        rot=args.ss_rot,
+        sol=args.ss_sol,
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
@@ -714,6 +730,13 @@ if __name__ == '__main__':
         "--aug-nn-width", type=int, default=32,
         help="Hidden size of aug processing network / aug hypernetwork, depending on aug-treatment"
     )
+
+    parser.add_argument(
+        "--aug-nn-out", type=int, default=None,
+        help="Output size  of aug processing network. Applicable only if aug-inj-type == proj-cat. "
+             "If not set, we will use aug-nn-width value."
+    )
+
     parser.add_argument(
         "--aug-nn-depth", type=int, default=2,
         help="Depth of aug processing network / aug hypernetwork, depending on aug-treatment"
@@ -778,6 +801,7 @@ if __name__ == '__main__':
     parser.add_argument('--ss-blur',  type=float, default=-1)
     parser.add_argument('--ss-rot',   type=float, default=-1)
     parser.add_argument('--ss-sol',   type=float, default=-1)
+    parser.add_argument("--ss-color-diff", type=float, default=-1)
     parser.add_argument('--ss-only',  action='store_true')
 
     args = parser.parse_args()

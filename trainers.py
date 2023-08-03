@@ -14,11 +14,12 @@ from tqdm import tqdm
 
 
 class SSObjective:
-    def __init__(self, crop=-1, color=-1, flip=-1, blur=-1, rot=-1, sol=-1, only=False):
+    def __init__(self, crop=-1, color=-1, flip=-1, blur=-1, rot=-1, sol=-1, color_diff=-1, only=False):
         self.only = only
         self.params = [
             ('crop',  crop,  4, 'regression'),
             ('color', color, 4, 'regression'),
+            ('color_diff', color_diff, 3, 'regression'),
             ('flip',  flip,  1, 'binary_classification'),
             ('blur',  blur,  1, 'regression'),
             ('rot',    rot,  4, 'classification'),

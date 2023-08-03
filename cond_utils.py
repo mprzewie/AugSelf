@@ -58,6 +58,8 @@ class AugProjector(nn.Module):
         self.aug_hn_type = args.aug_hn_type
         self.aug_nn_depth = args.aug_nn_depth
         self.aug_nn_width = args.aug_nn_width
+        self.aug_nn_out = args.aug_nn_out or args.aug_nn_width
+
         self.aug_cond = args.aug_cond or []
         self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
         self.aug_inj_type = args.aug_inj_type
@@ -72,10 +74,10 @@ class AugProjector(nn.Module):
             self.aug_processor = nn.Identity()
 
         elif self.aug_treatment == AUG_STRATEGY.mlp:
-            self.num_aug_features = self.aug_nn_width
+            self.num_aug_features = self.aug_nn_out
 
             self.aug_processor_out = (
-                self.aug_nn_width
+                self.aug_nn_out
                 if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat]
                 else args.num_backbone_features
             )
