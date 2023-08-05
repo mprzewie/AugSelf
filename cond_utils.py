@@ -34,6 +34,7 @@ class AUG_INJECTION_TYPES:
     proj_add = "proj-add" # multiply proj input by mlp output
     proj_none = "proj-none" # don't inject anything to projector
     img_cat = "img-cat" # concatenate raw/mlp_outputs to image channels
+    proj_rand = "proj-rand" # same as proj-cat, but concatenate random information (as requested by reviewer)
 
 class AUG_CNT_LOSS_TYPES:
     absolute = "abs" # contrast f_n' with theta_n'
@@ -78,7 +79,7 @@ class AugProjector(nn.Module):
 
             self.aug_processor_out = (
                 self.aug_nn_out
-                if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat]
+                if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_rand]
                 else args.num_backbone_features
             )
 
@@ -152,7 +153,7 @@ class AugProjector(nn.Module):
 
             projector_in = (
                 args.num_backbone_features + self.num_aug_features
-                if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat
+                if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_rand]
                 else args.num_backbone_features
             )
             self.projector = load_mlp(
@@ -163,6 +164,8 @@ class AugProjector(nn.Module):
                 last_bn=projector_last_bn,
                 last_bn_affine=projector_last_bn_affine,
             )
+            if args.no_proj:
+                self.projector = nn.Identity()
             print(self.projector)
 
 
@@ -173,6 +176,10 @@ class AugProjector(nn.Module):
 
             # print(f"pre {x.shape=}, {aug_desc.shape=}")
             if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat:
+                x = torch.concat([x, aug_desc], dim=1)
+
+            elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_rand:
+                aug_desc = torch.randn_like(aug_desc)
                 x = torch.concat([x, aug_desc], dim=1)
 
             elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_add:
@@ -225,58 +232,3 @@ class AugProjector(nn.Module):
             return x_proc.reshape(b_s, -1)
 
 
-class AugSSPredictor(nn.Module):
-    def __init__(self, args, out_dim: int, predictor_depth: int = 2):
-        super().__init__()
-        assert args.aug_treatment == AUG_STRATEGY.mlp, args.aug_treatment
-        assert args.ss_aug_inj_type == AUG_INJECTION_TYPES.proj_cat, args.ss_aug_inj_type
-
-        self.aug_treatment = args.aug_treatment
-        self.aug_inj_type = args.ss_aug_inj_type
-
-        self.num_aug_features = args.aug_nn_width
-        self.aug_cond = args.aug_cond or []
-        self.aug_nn_depth = args.aug_nn_depth
-        self.aug_nn_width = args.aug_nn_width
-        self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
-
-
-        self.aug_processor_out = args.aug_nn_width
-        args.aug_processor_out = self.aug_processor_out
-
-        self.aug_processor = load_mlp(
-            n_in=sum(self.aug_subset_sizes.values()),
-            n_hidden=self.aug_nn_width,
-            n_out=self.aug_processor_out,
-            num_layers=self.aug_nn_depth
-        )
-
-        projector_in = (
-                out_dim + self.num_aug_features
-                if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat
-                else out_dim
-        )
-        self.predictor = load_mlp(
-                projector_in,
-                out_dim // 4,
-                out_dim,
-                num_layers=predictor_depth,
-                last_bn=False
-            )
-
-        print("Predictor aug strategy:", self.aug_treatment)
-        print("Conditioning predictor on augmentations:", self.aug_subset_sizes)
-        print(self.aug_processor)
-        print(self.predictor)
-    def forward(self, x: torch.Tensor, aug_desc: torch.Tensor):
-
-        if self.aug_treatment in [AUG_STRATEGY.mlp, AUG_STRATEGY.raw]:
-
-            if self.aug_inj_type == AUG_INJECTION_TYPES.proj_cat:
-                aug_desc = self.aug_processor(aug_desc)
-                x = torch.concat([x, aug_desc], dim=1)
-            elif self.aug_inj_type == AUG_INJECTION_TYPES.proj_none:
-                x = x
-            else:
-                raise NotImplementedError(self.aug_inj_type)
-            return self.predictor(x)

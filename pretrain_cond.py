@@ -17,7 +17,7 @@ import ignite.distributed as idist
 
 import trainers_cond
 from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES, \
-    AUG_INJECTION_TYPES, AugSSPredictor
+    AUG_INJECTION_TYPES
 from datasets import load_pretrain_datasets
 from models import load_backbone, load_mlp, load_ss_predictor
 import trainers_cond as trainers
@@ -756,9 +756,13 @@ if __name__ == '__main__':
             AUG_INJECTION_TYPES.proj_mul,
             AUG_INJECTION_TYPES.img_cat,
             AUG_INJECTION_TYPES.proj_none,
+            AUG_INJECTION_TYPES.proj_rand
 
         ],
         help="How to inject raw or mlp-processed aug vectors. Used only if aug-treatment==mlp and in some cases for raw."
+    )
+    parser.add_argument(
+        "--no-proj", type=bool, action="store_true", help="If true, projector becomes an identity (like in MoCo-v1)"
     )
 
     parser.add_argument(
@@ -769,6 +773,7 @@ if __name__ == '__main__':
             AUG_INJECTION_TYPES.proj_mul,
             AUG_INJECTION_TYPES.img_cat,
             AUG_INJECTION_TYPES.proj_none,
+            AUG_INJECTION_TYPES.proj_rand
 
         ],
         help="How to inject raw or mlp-processed aug vectors into SimSiam predictor."

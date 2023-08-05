@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from ignite.engine import Engine
 import ignite.distributed as idist
 
-from cond_utils import AugProjector, AUG_DESC_TYPES, AUG_STRATEGY, AugSSPredictor
+from cond_utils import AugProjector, AUG_DESC_TYPES, AUG_STRATEGY
 from models import load_mlp
 from trainers import SSObjective
 from transforms import extract_aug_descriptors, extract_diff
