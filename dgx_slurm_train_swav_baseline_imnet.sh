@@ -32,8 +32,8 @@ LR=0.05
 BASE_DIR="/raid/NFS_SHARE/results/marcin.przewiezlikowski/uj/AugSelf/"
 
 
-EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_baseline_san_check"
-#EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_augself_san_check"
+EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_baseline_san_check_dgx"
+#EXP_NAME="${FRAMEWORK}-${BACKBONE}-${PRETRAIN_DATASET}_augself_san_check_dgx"
 
 OUT_DIR="${BASE_DIR}/${EXP_NAME}"
 

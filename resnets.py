@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Any, Type, Union, List, Dict
 
 import torch
@@ -7,6 +8,7 @@ from torchvision.models import ResNet
 from torchvision.models.resnet import BasicBlock, Bottleneck, model_urls
 
 from models import reset_parameters
+from vits import VisionTransformerMoCo, _cfg
 
 
 class ResnetOutBlocks(ResNet):
@@ -37,6 +39,50 @@ class ResnetOutBlocks(ResNet):
             backbone_out = backbone_out,
             out=x
         )
+
+class VitOutBlocks(VisionTransformerMoCo):
+    def forward(self, x):
+
+        result_dict = dict()
+        x = self.patch_embed(x)
+        cls_token = self.cls_token.expand(x.shape[0], -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+        if self.dist_token is None:
+            x = torch.cat((cls_token, x), dim=1)
+        else:
+            x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)
+        x = self.pos_drop(x + self.pos_embed)
+
+        for i, b in self.blocks:
+            x = b(x)
+            result_dict[f"b{i}"] = x[:, 0]
+        # x = self.blocks(x)
+        x = self.norm(x)
+        result_dict["norm"] = x[:, 0]
+
+        assert self.dist_token is None
+        x = self.pre_logits(x[:, 0])
+        result_dict["pre_logits"] = x
+        # else:
+        #     assert False
+        #     x = x[:, 0], x[:, 1]
+
+        # x = self.forward_features(x)
+        if self.head_dist is not None:
+            x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
+            if self.training and not torch.jit.is_scripting():
+                # # during inference, return the average of both classifier predictions
+                # return x, x_dist
+                raise NotImplementedError("only inference allowed!")
+            else:
+                x = (x + x_dist) / 2
+
+        else:
+            x = self.head(x)
+
+        result_dict["out"] = x
+        return x, result_dict
+
+
 
 def _resnet(
     arch: str,
@@ -74,6 +120,13 @@ def resnet50(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> 
     """
     return _resnet("resnet50", Bottleneck, [3, 4, 6, 3], pretrained, progress, **kwargs)
 
+def vit_small(stop_grad_conv1: bool=True, num_classes: int=4096, **kwargs):
+    model = VitOutBlocks(
+        patch_size=16, embed_dim=384, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), stop_grad_conv1=stop_grad_conv1, num_classes=num_classes, **kwargs)
+    model.default_cfg = _cfg()
+    return model
+
 def load_backbone_out_blocks(args):
     name = args.model
 
@@ -81,6 +134,12 @@ def load_backbone_out_blocks(args):
         backbone = resnet18(zero_init_residual=True)
     elif name == "resnet50":
         backbone = resnet50(zero_init_residual=True)
+
+    elif name == "vit_small":
+        backbone =vit_small()
+        args.num_backbone_features = backbone.head.weight.shape[1]
+        backbone.head = nn.Identity()
+        return backbone
     else:
         raise NotImplementedError(name)
 

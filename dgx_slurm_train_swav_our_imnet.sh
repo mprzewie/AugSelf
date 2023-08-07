@@ -53,7 +53,7 @@ do
       do
         {
           EXTRA_ARGS="--aug-cond crop color color_diff flip blur grayscale --base-lr ${LR} --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16 --seed ${SEED} --distributed"
-          SUFFIX="ideas_all_aug_w_color_diff_lr_${LR}_seed_${SEED}_500ep"
+          SUFFIX="ideas_all_aug_w_color_diff_lr_${LR}_seed_${SEED}_500ep_dgx"
 
 #          EXTRA_ARGS="--ss-crop 0.5 --ss-color 0.5 --base-lr ${LR} --wd 1e-4 --ckpt-freq ${FREQ} --eval-freq ${FREQ} --num-workers 16 --seed ${SEED} --distributed"
 #          SUFFIX="augself"
