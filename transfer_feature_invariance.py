@@ -16,15 +16,51 @@ from transforms import extract_aug_descriptors, RandomResizedCrop
 from utils import Logger, get_engine_mock
 from models import load_backbone, load_mlp, load_ss_predictor
 import torch.nn.functional as F
+from torch import nn
 
 PROJ_OUT = "projector_out"
 PROJ_OUT_MIXED = "projector_out_mixed_descriptors"
+PRED_OUT = "predictor_out"
+PRED_OUT_MIXED = "predictor_out_mixed_descriptors"
 
 BKB_OUT = "backbone_out"
 MLP = "mlp"
 AUG_COND = "aug_cond"
 
 proj_sims = defaultdict(list)
+
+def load_predictor(args, ckpt):
+    build_model = partial(idist.auto_model, sync_bn=True)
+
+    if "predictor" not in ckpt:
+        predictor = nn.Identity()
+
+    elif "simsiam" in args.origin_run_name:
+        out_dim = 2048
+        predictor =  load_mlp(out_dim,
+                     out_dim // 4,
+                     out_dim,
+                     num_layers=2,
+                     last_bn=False)
+        predictor.load_state_dict(ckpt["predictor"], strict=True)
+        predictor = build_model(predictor)
+    elif "mocov3" in args.origin_run_name:
+        moco_dim = 256
+        moco_mlp_dim: int=4096
+        predictor = build_model(
+            load_mlp(moco_dim,
+                     moco_mlp_dim,
+                     moco_dim,
+                     num_layers=2,
+                     last_bn=True, last_bn_affine=False)
+        )
+        predictor.load_state_dict(ckpt["predictor"], strict=True)
+        predictor = build_model(predictor)
+
+    else:
+        predictor = nn.Identity()
+
+    return predictor
 
 def load_projector(args, ckpt):
     projector_type = None
@@ -52,7 +88,8 @@ def load_projector(args, ckpt):
             n_hidden=2048,
             n_out=2048,
             num_layers=3,
-            last_bn=True
+            last_bn=True,
+            last_bn_affine=True
         )
 
     elif "simclr" in args.origin_run_name:
@@ -96,7 +133,7 @@ def load_projector(args, ckpt):
     try:
         try:
             projector = load_mlp(**projector_kwargs)
-            projector.load_state_dict(ckpt["projector"])
+            projector.load_state_dict(ckpt["projector"], strict=True)
             projector_type = MLP
 
 
@@ -117,11 +154,13 @@ def load_projector(args, ckpt):
             args.aug_hn_type = AUG_HN_TYPES.mlp
             args.aug_nn_depth = int(depth)
             args.aug_nn_width = int(width)
+            args.aug_nn_out = None
+            args.no_proj = False
             args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
             args.aug_inj_type = inj_type
 
             projector = AugProjector(**aug_projector_kwargs)
-            projector.load_state_dict(ckpt["projector"])
+            projector.load_state_dict(ckpt["projector"], strict=True)
             projector_type = AUG_COND
 
 
@@ -209,6 +248,8 @@ def main(local_rank, args):
 
     projector_type, projector = load_projector(args, ckpt)
 
+    predictor = load_predictor(args, ckpt)
+
     # EXTRACT FROZEN FEATURES
     logger.log_msg('collecting features ...')
 
@@ -248,7 +289,7 @@ def main(local_rank, args):
 
             if projector_type is not None:
                 if projector_type == MLP:
-                    feats_norm[PROJ_OUT] = F.normalize(projector(feats_norm[BKB_OUT]))
+                    feats_norm[PROJ_OUT] = feats_norm[PRED_OUT] = F.normalize(projector(feats_norm[BKB_OUT]))
                 elif projector_type == AUG_COND:
                     fake_crop_params = torch.cat([torch.zeros(bs, 2), torch.ones(bs, 2)], dim=1)
                     aug_desc = dict()
@@ -300,12 +341,13 @@ def main(local_rank, args):
                             dim=1
                         ).to(device)                    
                     
-                    feats_norm[PROJ_OUT] = F.normalize(
+                    feats_norm[PROJ_OUT] = feats_norm[PRED_OUT] = F.normalize(
                         projector(feats_norm[BKB_OUT], t_to_aug_descriptors["identity"])
                     )
-                    feats_norm[PROJ_OUT_MIXED] = F.normalize(
+                    feats_norm[PROJ_OUT_MIXED] = feats_norm[PRED_OUT_MIXED] = F.normalize(
                         projector(feats_norm[BKB_OUT], t_to_aug_descriptors["identity"])
                     )
+
                 else:
                     raise NotImplementedError(projector_type)
 
@@ -314,16 +356,20 @@ def main(local_rank, args):
 
                 if projector_type == MLP:
                     feats_t[PROJ_OUT] = F.normalize(projector(feats_t[BKB_OUT]))
+                    feats_t[PRED_OUT] = predictor(feats_t[PROJ_OUT])
                 elif projector_type == AUG_COND:
                     feats_t[PROJ_OUT] = F.normalize(
                         projector(feats_t[BKB_OUT], t_to_aug_descriptors[t_name])
                     )
+                    feats_t[PRED_OUT] = predictor(feats_t[PROJ_OUT])
+
                     feats_t[PROJ_OUT_MIXED] = F.normalize(
                         projector(feats_t[BKB_OUT], torch.flip(t_to_aug_descriptors[f"{t_name}_mixed"], [0]))
                     )
-                    
+                    feats_t[PRED_OUT_MIXED] = predictor(feats_t[PROJ_OUT_MIXED])
 
-                assert feats_norm.keys() == feats_t.keys()
+
+                assert feats_norm.keys() == feats_t.keys(), (feats_norm.keys(), feats_t.keys())
 
                 for block_name, fn in feats_norm.items():
                     ft = feats_t[block_name]

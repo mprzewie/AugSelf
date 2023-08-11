@@ -57,17 +57,17 @@ def simsiam(args, t1, t2):
     n_aug_feats = sum([AUG_DESC_SIZE_CONFIG[k] for k in sorted_aug_cond])
 
 
-    cond_projector = build_model(
-        AugProjector(
+    proj = AugProjector(
             args,
             proj_hidden_dim=out_dim,
             proj_out_dim=out_dim,
             proj_depth=2+int(args.dataset.startswith('imagenet')),
-            projector_last_bn=True, 
+            projector_last_bn=True,
             projector_last_bn_affine=True
-            
+
         )
-    )
+    cond_projector = build_model(proj) if not args.no_proj else proj
+
     predictor    = build_model(
         load_mlp(out_dim,
         out_dim // 4,
@@ -127,13 +127,12 @@ def moco(args, t1, t2):
     backbone     = build_model(load_backbone(args))
 
 
-    projector : AugProjector= build_model(
-        AugProjector(
+    proj = AugProjector(
             args,
             proj_out_dim=out_dim,
             proj_depth=2,
         )
-    )
+    projector : AugProjector = build_model(proj) if ((not args.no_proj) or (args.aug_inj_type != AUG_INJECTION_TYPES.proj_none)) else proj
 
 
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
@@ -542,6 +541,7 @@ def swav(args, t1, t2):
 def main(local_rank, args):
     cudnn.benchmark = True
     device = idist.device()
+
     logger = Logger(
         args.logdir, args.resume, args=args,
         job_type="pretrain"
@@ -762,7 +762,7 @@ if __name__ == '__main__':
         help="How to inject raw or mlp-processed aug vectors. Used only if aug-treatment==mlp and in some cases for raw."
     )
     parser.add_argument(
-        "--no-proj", type=bool, action="store_true", help="If true, projector becomes an identity (like in MoCo-v1)"
+        "--no-proj", action="store_true", help="If true, projector becomes an identity (like in MoCo-v1)"
     )
 
     parser.add_argument(

@@ -64,6 +64,7 @@ class AugProjector(nn.Module):
         self.aug_cond = args.aug_cond or []
         self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
         self.aug_inj_type = args.aug_inj_type
+        self.no_proj = args.no_proj
         self.projector_last_bn = projector_last_bn
 
         print("Projector aug strategy:", self.aug_treatment)
