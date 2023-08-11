@@ -614,11 +614,20 @@ def load_pretrain_datasets(dataset='cifar10',
 
 def load_datasets(dataset='cifar10',
                   datadir='/data',
-                  pretrain_data='stl10'):
+                  pretrain_data='stl10',
+                  train_crop_mode: str = "center"
+                  ):
+
+    assert train_crop_mode in ["center", "random"]
 
     if pretrain_data == 'imagenet100':
         mean = torch.tensor([0.485, 0.456, 0.406])
         std  = torch.tensor([0.229, 0.224, 0.225])
+        train_transform = T.Compose([T.Resize(224, interpolation=Image.BICUBIC),
+                               (T.CenterCrop(224) if train_crop_mode == "center" else T.RandomCrop(224)),
+                               T.ToTensor(),
+                               T.Normalize(mean, std)])
+
         transform = T.Compose([T.Resize(224, interpolation=Image.BICUBIC),
                                T.CenterCrop(224),
                                T.ToTensor(),
@@ -627,6 +636,13 @@ def load_datasets(dataset='cifar10',
     elif pretrain_data == 'stl10':
         mean = torch.tensor([0.43, 0.42, 0.39])
         std  = torch.tensor([0.27, 0.26, 0.27])
+
+        train_transform = T.Compose([T.Resize(96, interpolation=Image.BICUBIC),
+                               (T.CenterCrop(96) if train_crop_mode == "center" else T.RandomCrop(96)),
+                               T.ToTensor(),
+                               T.Normalize(mean, std)])
+
+
         transform = T.Compose([T.Resize(96, interpolation=Image.BICUBIC),
                                T.CenterCrop(96),
                                T.ToTensor(),
@@ -637,54 +653,64 @@ def load_datasets(dataset='cifar10',
         """
         https://github.com/HobbitLong/CMC/blob/master/imagenet100.txt
         """
-        trainval = ImageNet100(datadir, split='train', transform=transform)
+        trainval = ImageNet100(datadir, split='train', transform=train_transform)
         n_trainval = len(trainval)
         train, val = random_split(trainval, [int(n_trainval * 0.9), int(n_trainval * 0.1)], generator=generator(42))
         test     = ImageNet100(datadir, split='val', transform=transform)
         num_classes = 100
 
     elif dataset == 'food101':
-        trainval   = Food101(root=datadir, split='train', transform=transform, download=True)
+        trainval   = Food101(root=datadir, split='train', transform=train_transform, download=True)
         train, val = random_split(trainval, [68175, 7575], generator=generator(42))
         test       = Food101(root=datadir, split='test',  transform=transform, download=True)
         num_classes = 101
 
     elif dataset == 'cifar10':
-        trainval   = CIFAR10(root=datadir, train=True,  transform=transform, download=True)
+        trainval   = CIFAR10(root=datadir, train=True,  transform=train_transform, download=True)
         train, val = random_split(trainval, [45000, 5000], generator=generator(43))
         test       = CIFAR10(root=datadir, train=False, transform=transform, download=True)
         num_classes = 10
 
     elif dataset == 'cifar100':
-        trainval   = CIFAR100(root=datadir, train=True,  transform=transform, download=True)
+        trainval   = CIFAR100(root=datadir, train=True,  transform=train_transform, download=True)
         train, val = random_split(trainval, [45000, 5000], generator=generator(44))
         test       = CIFAR100(root=datadir, train=False, transform=transform, download=True)
         num_classes = 100
 
     elif dataset == 'sun397':
         trn_indices, val_indices = torch.load('splits/sun397.pth')
-        trainval = SUN397(root=datadir, split='Training', transform=transform)
+        trainval = SUN397(root=datadir, split='Training', transform=train_transform,)
         train    = Subset(trainval, trn_indices)
         val      = Subset(trainval, val_indices)
         test     = SUN397(root=datadir, split='Testing',  transform=transform)
         num_classes = 397
 
     elif dataset == 'dtd':
-        train    = DTD(root=datadir, split='train', transform=transform, download=True)
+        train    = DTD(root=datadir, split='train', transform=train_transform, download=True)
         val      = DTD(root=datadir, split='val',   transform=transform, download=True)
         trainval = ConcatDataset([train, val])
         test     = DTD(root=datadir, split='test',  transform=transform, download=True)
         num_classes = 47
 
     elif dataset == 'pets':
-        trainval   = OxfordIIITPet(root=datadir, split='trainval', transform=transform, download=True)
+        trainval   = OxfordIIITPet(root=datadir, split='trainval', transform=train_transform, download=True)
         train, val = random_split(trainval, [2940, 740], generator=generator(49))
         test       = OxfordIIITPet(root=datadir, split='test',     transform=transform, download=True)
         num_classes = 37
 
     elif dataset == 'caltech101':
         transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
-        D = Caltech101(datadir, transform=transform, download=True)
+        D = Caltech101(datadir, transform=train_transform, download=True)
+        trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
+        train    = Subset(D, trn_indices)
+        val      = Subset(D, val_indices)
+        trainval = ConcatDataset([train, val])
+        test     = Subset(D, tst_indices)
+        num_classes = 101
+
+    elif dataset == 'caltech256':
+        transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
+        D = Caltech256(datadir, transform=train_transform, download=True)
         trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
         train    = Subset(D, trn_indices)
         val      = Subset(D, val_indices)
@@ -693,7 +719,7 @@ def load_datasets(dataset='cifar10',
         num_classes = 101
 
     elif dataset == 'flowers':
-        train = Flowers102(datadir, split="train", transform=transform, download=True)
+        train = Flowers102(datadir, split="train", transform=train_transform, download=True)
         val = Flowers102(datadir, split="val", transform=transform, download=True)
         test = Flowers102(datadir, split="test", transform=transform, download=True)
 
@@ -756,7 +782,7 @@ def load_datasets(dataset='cifar10',
         num_classes = 102
 
     elif dataset == 'stl10':
-        trainval   = STL10(root=datadir, split='train', transform=transform, download=True)
+        trainval   = STL10(root=datadir, split='train', transform=train_transform, download=True)
         test       = STL10(root=datadir, split='test',  transform=transform, download=True)
         train, val = random_split(trainval, [4500, 500], generator=generator(50))
         num_classes = 10
@@ -766,7 +792,7 @@ def load_datasets(dataset='cifar10',
         """
         https://www.kaggle.com/datasets/itsahmad/indoor-scenes-cvpr-2019
         """
-        trainval = ImageFolder(os.path.join(datadir, 'train'), transform=transform)
+        trainval = ImageFolder(os.path.join(datadir, 'train'), transform=train_transform,)
         test     = ImageFolder(os.path.join(datadir, 'test'),  transform=transform)
         train, val = random_split(trainval, [4690, 670], generator=generator(51))
         num_classes = 67
@@ -800,13 +826,13 @@ def load_datasets(dataset='cifar10',
         num_classes = 200
 
     elif dataset == 'cars':
-        trainval = StanfordCars(datadir, "train", transform=transform, download=True)
+        trainval = StanfordCars(datadir, "train", transform=train_transform, download=True)
         test =  StanfordCars(datadir, "test", transform=transform, download=True)
         train, val = random_split(trainval, [7000, 1144], generator=generator(51))
         num_classes = 196
 
     elif dataset == 'aircraft':
-        trainval = FGVCAircraft(datadir, "trainval", transform=transform, download=True)
+        trainval = FGVCAircraft(datadir, "trainval", transform=train_transform, download=True)
         train = FGVCAircraft(datadir, "train", transform=transform, download=True)
         val = FGVCAircraft(datadir, "val", transform=transform, download=True)
 
@@ -814,21 +840,21 @@ def load_datasets(dataset='cifar10',
         num_classes = 100
 
     elif dataset == "celeba":
-        train = CelebA(datadir, split="train", target_type="landmarks", transform=transform, download=False)
+        train = CelebA(datadir, split="train", target_type="landmarks", transform=train_transform, download=False)
         val = CelebA(datadir, split="valid", target_type="landmarks", transform=transform, download=False)
         test  = CelebA(datadir, split="valid", target_type="landmarks", transform=transform, download=False)
         trainval = ConcatDataset([train, val])
         num_classes = 10
 
     elif dataset == "300w":
-        train = FacesInTheWild300W(datadir, split="train", transform=transform, download=False)
+        train = FacesInTheWild300W(datadir, split="train", transform=train_transform, download=False)
         val = FacesInTheWild300W(datadir, split="valid", transform=transform, download=False)
         test = FacesInTheWild300W(datadir, split="test", transform=transform, download=False)
         trainval = ConcatDataset([train, val])
         num_classes = 136
 
     elif dataset == "lspose":
-        train = val = trainval = LeedsSportsPose(datadir, split="train", transform=transform, download=False)
+        train = val = trainval = LeedsSportsPose(datadir, split="train", transform=train_transform, download=False)
         test = LeedsSportsPose(datadir, split="train", transform=transform, download=False)
         num_classes = 28
 
