@@ -112,8 +112,8 @@ def moco(backbone,
     ):
         p.requires_grad = False
 
-
-    if projector.module.no_proj:
+    _proj = projector if isinstance(projector, AugProjector) else projector.module
+    if _proj.no_proj:
         queue = F.normalize(torch.randn(K, 2048).to(device)).detach()
     else:
         queue = F.normalize(torch.randn(K, 128).to(device)).detach()
