@@ -65,6 +65,7 @@ class AugProjector(nn.Module):
         self.aug_subset_sizes = {k: v for (k, v) in AUG_DESC_SIZE_CONFIG.items() if k in self.aug_cond}
         self.aug_inj_type = args.aug_inj_type
         self.no_proj = args.no_proj
+        self.bkb_feat_dim = args.bkb_feat_dim
         self.projector_last_bn = projector_last_bn
 
         print("Projector aug strategy:", self.aug_treatment)
@@ -167,11 +168,18 @@ class AugProjector(nn.Module):
             )
             if args.no_proj:
                 self.projector = nn.Identity()
+            else:
+                assert self.bkb_feat_dim is None
+                
             print(self.projector)
 
 
     def forward(self, x: torch.Tensor, aug_desc: torch.Tensor):
-
+        if self.bkb_feat_dim is not None:
+            print(x.shape)
+            x = x[:, :self.bkb_feat_dim]
+            assert False, x.shape
+        
         if self.aug_treatment in [AUG_STRATEGY.mlp, AUG_STRATEGY.raw]:
             aug_desc = self.aug_processor(aug_desc)
 

@@ -764,6 +764,10 @@ if __name__ == '__main__':
     parser.add_argument(
         "--no-proj", action="store_true", help="If true, projector becomes an identity (like in MoCo-v1)"
     )
+    
+    parser.add_argument(
+        "--bkb-feat-dim", type=int, default=None, help="Use first N features from backbone for projector and omit the rest (like in DirectCLR). Can only be used in conjunction with --no-proj."
+    )
 
     parser.add_argument(
         "--ss-aug-inj-type", type=str, default=AUG_INJECTION_TYPES.proj_none,
