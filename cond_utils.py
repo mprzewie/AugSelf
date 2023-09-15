@@ -176,9 +176,7 @@ class AugProjector(nn.Module):
 
     def forward(self, x: torch.Tensor, aug_desc: torch.Tensor):
         if self.bkb_feat_dim is not None:
-            print(x.shape)
             x = x[:, :self.bkb_feat_dim]
-            assert False, x.shape
         
         if self.aug_treatment in [AUG_STRATEGY.mlp, AUG_STRATEGY.raw]:
             aug_desc = self.aug_processor(aug_desc)
