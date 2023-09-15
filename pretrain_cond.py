@@ -293,14 +293,13 @@ def simclr(args, t1, t2):
 
     sorted_aug_cond = sorted(args.aug_cond)
 
-
-    projector = build_model(
-        AugProjector(
+    proj = AugProjector(
             args,
             proj_out_dim=out_dim,
             proj_depth=2,
         )
-    )
+    projector = build_model(proj) if ((not args.no_proj) or (args.aug_inj_type != AUG_INJECTION_TYPES.proj_none)) else proj
+
 
     ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
     ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
