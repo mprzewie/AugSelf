@@ -71,6 +71,7 @@ def simsiam(backbone,
                 loss2 = F.cosine_similarity(p2, z1.detach(), dim=-1).mean().mul(-1)
                 loss = (loss1 + loss2).mul(0.5)
             else:
+                T = 0.2
                 z = torch.cat([z1, z2], 0)
                 scores = torch.einsum('ik, jk -> ij', z, z).div(T)
                 n = z1.shape[0]
