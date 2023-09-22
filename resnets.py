@@ -52,7 +52,7 @@ class VitOutBlocks(VisionTransformerMoCo):
             x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)
         x = self.pos_drop(x + self.pos_embed)
 
-        for i, b in self.blocks:
+        for i, b in enumerate(self.blocks):
             x = b(x)
             result_dict[f"b{i}"] = x[:, 0]
         # x = self.blocks(x)
@@ -61,26 +61,27 @@ class VitOutBlocks(VisionTransformerMoCo):
 
         assert self.dist_token is None
         x = self.pre_logits(x[:, 0])
-        result_dict["pre_logits"] = x
+        result_dict["backbone_out"] = x
         # else:
         #     assert False
         #     x = x[:, 0], x[:, 1]
 
         # x = self.forward_features(x)
-        if self.head_dist is not None:
-            x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
-            if self.training and not torch.jit.is_scripting():
-                # # during inference, return the average of both classifier predictions
-                # return x, x_dist
-                raise NotImplementedError("only inference allowed!")
-            else:
-                x = (x + x_dist) / 2
-
-        else:
-            x = self.head(x)
+        assert self.head_dist is None
+        # if self.head_dist is not None:
+        #     x, x_dist = self.head(x[0]), self.head_dist(x[1])  # x must be a tuple
+        #     if self.training and not torch.jit.is_scripting():
+        #         # # during inference, return the average of both classifier predictions
+        #         # return x, x_dist
+        #         raise NotImplementedError("only inference allowed!")
+        #     else:
+        #         x = (x + x_dist) / 2
+        #
+        # else:
+        x = self.head(x)
 
         result_dict["out"] = x
-        return x, result_dict
+        return result_dict
 
 
 

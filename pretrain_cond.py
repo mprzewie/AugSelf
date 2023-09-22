@@ -93,7 +93,8 @@ def simsiam(args, t1, t2):
                                optimizers=optimizers,
                                device=device,
                                ss_objective=ss_objective,
-                               aug_cond=sorted_aug_cond
+                               aug_cond=sorted_aug_cond,
+                               simclr_loss = args.simsiam_use_negatives
                                )
 
     return dict(backbone=backbone,
@@ -780,6 +781,10 @@ if __name__ == '__main__':
 
         ],
         help="How to inject raw or mlp-processed aug vectors into SimSiam predictor."
+    )
+    parser.add_argument(
+        "--simsiam-use-negatives", action="store_true", default=False,
+        help="Simsiam with simclr loss"
     )
 
     parser.add_argument(
