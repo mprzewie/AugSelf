@@ -25,6 +25,7 @@ MLP = "mlp"
 AUG_COND = "aug_cond"
 
 proj_sims = defaultdict(list)
+infonce_sims = defaultdict(list)
 
 def load_projector(args, ckpt):
     projector_type = None
@@ -117,6 +118,8 @@ def load_projector(args, ckpt):
             args.aug_hn_type = AUG_HN_TYPES.mlp
             args.aug_nn_depth = int(depth)
             args.aug_nn_width = int(width)
+            args.aug_nn_out = None
+            args.no_proj = False
             args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
             args.aug_inj_type = inj_type
 
@@ -141,7 +144,7 @@ def infonce_loss(ft_1, ft_2, device, T: float = 0.2):
     logits = torch.einsum('nc,mc->nm', [fn_r, ft_r]) / T
     N = logits.shape[0]
     labels = torch.arange(N, dtype=torch.long).to(device)
-    return F.cross_entropy(logits, labels) * (2 * T)
+    return F.cross_entropy(logits, labels, reduction="none") * (2 * T)
 
 def self_distill_loss(ft_1, ft_2, device=None):
     return F.cosine_similarity(ft_1, ft_2.detach(), dim=-1).mean().mul(-1)
@@ -222,6 +225,7 @@ def main(local_rank, args):
     t_name_to_b_name_to_diff_sims = defaultdict(
         lambda: defaultdict(list)
     )
+
     t_name_to_b_name_to_infonce = defaultdict(lambda : defaultdict(list))
     t_name_to_b_name_to_self_distill = defaultdict(lambda : defaultdict(list))
     t_name_to_b_name_to_cca = defaultdict(lambda : defaultdict(list))
@@ -331,8 +335,11 @@ def main(local_rank, args):
                     ft_r = ft.reshape(bs, -1)
                     positive_sim = cosine_similarity(fn_r, ft_r).mean().item()
                     
+                    infonce = infonce_loss(fn_r, ft_r, device)
+
                     if block_name in [PROJ_OUT, PROJ_OUT_MIXED]:
                         proj_sims[f"{block_name}/{t_name}"].extend(cosine_similarity(fn_r, ft_r).detach().cpu().numpy().reshape(-1))
+                        infonce_sims[f"{block_name}/{t_name}"].extend(infonce.detach().cpu().numpy().reshape(-1))
                     
                     negative_sim = cosine_similarity(
                         fn_r,
@@ -343,8 +350,7 @@ def main(local_rank, args):
                     t_name_to_b_name_to_negative_sims[t_name][block_name].append(negative_sim)
                     t_name_to_b_name_to_diff_sims[t_name][block_name].append(positive_sim - negative_sim)
 
-                    infonce = infonce_loss(fn_r, ft_r, device)
-                    t_name_to_b_name_to_infonce[t_name][block_name].append(infonce.item())
+                    t_name_to_b_name_to_infonce[t_name][block_name].append(infonce.mean().item())
                     self_distill = self_distill_loss(fn_r, ft_r)
                     t_name_to_b_name_to_self_distill[t_name][block_name].append(self_distill.item())
 
@@ -378,6 +384,7 @@ def main(local_rank, args):
                     
                     if block_name in [PROJ_OUT, PROJ_OUT_MIXED]:
                         metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/positive_sims"] = np.array(proj_sims[f"{block_name}/{t_name}"])
+                        metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/infonce_sims"] = np.array(infonce_sims[f"{block_name}/{t_name}"])
 
         logger.log(
             engine=engine_mock, global_step=i,
