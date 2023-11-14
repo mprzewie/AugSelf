@@ -116,6 +116,8 @@ def moco(backbone,
          momentum=0.999,
          K: int = 65536,
          T: float = 0.2,
+         ifm_epsilon: float = 0.0,
+         ifm_alpha: float = 0.1
          ):
     target_backbone = deepcopy(backbone)
     target_projector = deepcopy(projector)
@@ -170,6 +172,13 @@ def moco(backbone,
         logits = torch.cat([l_pos, l_neg], dim=1).div(T)
         labels = torch.zeros(logits.shape[0], dtype=torch.long).to(device)
         loss = F.cross_entropy(logits, labels)
+
+        if ifm_epsilon > 0:
+            logits_adv = torch.cat([l_pos - ifm_epsilon, l_neg + ifm_epsilon], dim=1).div(T)
+            loss_adv = F.cross_entropy(logits_adv, labels)
+            loss = loss + ifm_alpha * loss_adv
+            loss = loss / (1+ifm_alpha)
+
         outputs = dict(loss=loss, z1=z1, z2=z2)
 
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)

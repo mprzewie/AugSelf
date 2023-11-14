@@ -160,7 +160,9 @@ def moco(args, t1, t2):
             optimizers=optimizers,
             device=device,
             ss_objective=ss_objective,
-            aug_cond=args.aug_cond or []
+            aug_cond=args.aug_cond or [],
+            ifm_epsilon=args.ifm_epsilon,
+            ifm_alpha=args.ifm_alpha
     )
 
     return dict(backbone=backbone,
@@ -816,6 +818,9 @@ if __name__ == '__main__':
     parser.add_argument('--ss-sol',   type=float, default=-1)
     parser.add_argument("--ss-color-diff", type=float, default=-1)
     parser.add_argument('--ss-only',  action='store_true')
+    parser.add_argument("--ifm-alpha", type=float, default=0.0)
+    parser.add_argument("--ifm-epsilon", type=float, default=0.1)
+
 
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256
