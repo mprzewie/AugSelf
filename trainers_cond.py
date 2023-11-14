@@ -43,6 +43,7 @@ def simsiam(backbone,
             device,
             ss_objective: SSObjective,
             aug_cond,
+            simclr_loss: bool = False
             ):
     def training_step(engine, batch):
         backbone.train()
@@ -64,9 +65,23 @@ def simsiam(backbone,
             z2 = projector(y2, d2_cat)
             p1 = predictor(z1)
             p2 = predictor(z2)
-            loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
-            loss2 = F.cosine_similarity(p2, z1.detach(), dim=-1).mean().mul(-1)
-            loss = (loss1 + loss2).mul(0.5)
+
+            if not simclr_loss:
+                loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
+                loss2 = F.cosine_similarity(p2, z1.detach(), dim=-1).mean().mul(-1)
+                loss = (loss1 + loss2).mul(0.5)
+            else:
+                T = 0.2
+                z = torch.cat([z1, z2], 0)
+                scores = torch.einsum('ik, jk -> ij', z, z).div(T)
+                n = z1.shape[0]
+                labels = torch.tensor(list(range(n, 2 * n)) + list(range(0, n)), device=scores.device)
+                masks = torch.zeros_like(scores, dtype=torch.bool)
+                for i in range(2 * n):
+                    masks[i, i] = True
+                scores = scores.masked_fill(masks, float('-inf'))
+                loss = F.cross_entropy(scores, labels)
+
         else:
             loss = 0.
 
@@ -112,7 +127,12 @@ def moco(backbone,
     ):
         p.requires_grad = False
 
-    queue = F.normalize(torch.randn(K, 128).to(device)).detach()
+    _proj = projector if isinstance(projector, AugProjector) else projector.module
+    if _proj.no_proj:
+        queue = F.normalize(torch.randn(K, 2048).to(device)).detach()
+    else:
+        queue = F.normalize(torch.randn(K, 128).to(device)).detach()
+
     queue.requires_grad = False
     queue.ptr = 0
 
