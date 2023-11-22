@@ -158,6 +158,7 @@ def load_projector(args, ckpt):
             args.no_proj = False
             args.aug_cond = ["crop", "color", "color_diff", "flip", "blur", "grayscale"]
             args.aug_inj_type = inj_type
+            args.bkb_feat_dim = None
 
             projector = AugProjector(**aug_projector_kwargs)
             projector.load_state_dict(ckpt["projector"], strict=True)
@@ -171,7 +172,8 @@ def load_projector(args, ckpt):
         return projector_type, projector
 
     except Exception as e:
-        print(f"Could not load any projector bf of {e}")
+        print(f"Could not load any projector bc of {e}")
+        raise
         return projector_type, None
 
 def infonce_loss(ft_1, ft_2, device, T: float = 0.2):
@@ -274,13 +276,15 @@ def main(local_rank, args):
         for i, (X, _) in enumerate(testloader):
             X_transformed = {
                 t_name: t(X) for (t_name, t) in transforms_dict.items()
+                if t !="mixed"
             }
             X_crops_and_params = [rrc(x) for x in X]
             crop_params = torch.stack([p for (_, p) in X_crops_and_params])
             X_crop = torch.stack([x for (x, _) in X_crops_and_params])
-            X_crop = identity(X_crop) #norm
-            X_transformed["crop"] = X_crop
-
+            
+            X_transformed["mixed"] = identity(transforms_dict["mixed"](X_crop))
+            X_transformed["crop"] = identity(X_crop)
+           
             X_norm = X_transformed.pop("identity")
 
             bs = X_norm.shape[0]
@@ -295,6 +299,8 @@ def main(local_rank, args):
                     aug_desc = dict()
                     
                     for (t_name, t) in transforms_dict.items():
+                        if t_name == "mixed":
+                            continue
                         assert t_name != "crop"
                         aug_desc.update(
                             extract_aug_descriptors(
@@ -311,8 +317,14 @@ def main(local_rank, args):
                     t_to_aug_descriptors = dict()
                     
                     for t_name in transforms_dict.keys():
-                        
-                        augs_to_search_in = ["crop", t_name] if t_name != "color" else ["crop", t_name, "color_diff"]
+                        if t_name =="mixed": 
+                            continue
+                            
+                        if t_name != "color":
+                            augs_to_search_in = ["crop", t_name]
+                        else:
+                            ["crop", t_name, "color_diff"]
+                            
                         t_to_aug_descriptors[t_name] = torch.cat(
                             [
                                 (aug_desc[k] if k in augs_to_search_in else torch.zeros_like(aug_desc[k]))
@@ -339,7 +351,14 @@ def main(local_rank, args):
                                 for k in aug_keys
                             ], 
                             dim=1
-                        ).to(device)                    
+                        ).to(device)     
+                    
+                    mixed_aug_desc = extract_aug_descriptors(transforms_dict["mixed"][0], crop_params)
+                    
+                    t_to_aug_descriptors["mixed"] = t_to_aug_descriptors["mixed_mixed"] = torch.cat(
+                        [mixed_aug_desc[k] for k in aug_keys],
+                        dim=1
+                    ).to(device)
                     
                     feats_norm[PROJ_OUT] = feats_norm[PRED_OUT] = F.normalize(
                         projector(feats_norm[BKB_OUT], t_to_aug_descriptors["identity"])
@@ -416,14 +435,22 @@ def main(local_rank, args):
             ("cca", t_name_to_b_name_to_cca),
         ]:
             for t_name, b_name_to_sim in sim_dict.items():
+                
+                
+                
                 for block_name, sims in b_name_to_sim.items():
                     mean_sim = np.mean(sims)
                     std_sim = np.std(sims)
                     logger.log_msg(f'{sim_kind} {args.dataset} invariance of {block_name} to {t_name}: {mean_sim:.4f}±{std_sim:.4f}')
                     metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/{sim_kind}"] = mean_sim
                     
+    
                     if block_name in [PROJ_OUT, PROJ_OUT_MIXED]:
                         metrics[f"test_feature_invariance/{args.dataset}/{block_name}/{t_name}/positive_sims"] = np.array(proj_sims[f"{block_name}/{t_name}"])
+                    
+                metrics[f"test_feature_invariance/{args.dataset}/true_aug_info_better_than_false/{t_name}/positive_sims"] = (
+                    np.array(proj_sims[f"{PROJ_OUT}/{t_name}"]) >= np.array(proj_sims[f"{PROJ_OUT_MIXED}/{t_name}"])
+                ).astype(float).mean()
 
         logger.log(
             engine=engine_mock, global_step=i,
