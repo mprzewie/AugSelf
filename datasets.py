@@ -498,12 +498,17 @@ class SUN397(ImageList):
 
 def load_pretrain_datasets(dataset='cifar10',
                            datadir='/data',
-                           color_aug='default'):
+                           color_aug='default',
+                           num_views: int=2
+                           ):
 
     if dataset == 'imagenet100':
         mean = torch.tensor([0.485, 0.456, 0.406])
         std  = torch.tensor([0.229, 0.224, 0.225])
-        train_transform = MultiView(RandomResizedCrop(224, scale=(0.2, 1.0)))
+        train_transform = MultiView(
+            RandomResizedCrop(224, scale=(0.2, 1.0)),
+            num_views=num_views
+        )
         test_transform = T.Compose([T.Resize(224),
                                     T.CenterCrop(224),
                                     T.ToTensor(),
@@ -526,7 +531,7 @@ def load_pretrain_datasets(dataset='cifar10',
     elif dataset == 'stl10':
         mean = torch.tensor([0.43, 0.42, 0.39])
         std  = torch.tensor([0.27, 0.26, 0.27])
-        train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
+        train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)), num_views=num_views)
 
         if color_aug == 'default':
             s = 1
@@ -556,7 +561,7 @@ def load_pretrain_datasets(dataset='cifar10',
     elif dataset == 'stl10_rot':
         mean = torch.tensor([0.43, 0.42, 0.39])
         std  = torch.tensor([0.27, 0.26, 0.27])
-        train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
+        train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)), num_views=num_views)
         test_transform = T.Compose([T.Resize(96),
                                     T.CenterCrop(96),
                                     T.ToTensor(),
@@ -581,7 +586,7 @@ def load_pretrain_datasets(dataset='cifar10',
     elif dataset == 'stl10_sol':
         mean = torch.tensor([0.43, 0.42, 0.39])
         std  = torch.tensor([0.27, 0.26, 0.27])
-        train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)))
+        train_transform = MultiView(RandomResizedCrop(96, scale=(0.2, 1.0)), num_views=num_views)
 
         test_transform = T.Compose([T.Resize(96),
                                     T.CenterCrop(96),
