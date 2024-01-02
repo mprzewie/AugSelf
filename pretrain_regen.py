@@ -526,7 +526,7 @@ def main(local_rank, args):
 
     logger = Logger(
         args.logdir, args.resume, args=args,
-        job_type="pretrain"
+        job_type="pretrain_regen"
     )
 
     if idist.get_rank() == 0:
