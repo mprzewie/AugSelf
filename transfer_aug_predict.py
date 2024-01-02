@@ -20,6 +20,7 @@ from models import load_backbone, load_ss_predictor
 from trainers import collect_features, SSObjective
 from trainers_cond import prepare_training_batch
 from utils import Logger, get_engine_mock
+from tqdm import tqdm
 
 
 def build_step(X, Y, classifier, optimizer, w, criterion_fn):
@@ -116,14 +117,14 @@ def main(local_rank, args):
     device = idist.device()
 
 
-    ckpt_parents = set([Path(c).parent for c in args.ckpt])
-    assert len(set(ckpt_parents)) == 1, f"Expected a single checkpoints directory but got {ckpt_parents}"
-    logdir = list(ckpt_parents)[0]
+    # ckpt_parents = set([Path(c).parent for c in args.ckpt])
+    # assert len(set(ckpt_parents)) == 1, f"Expected a single checkpoints directory but got {ckpt_parents}"
+    logdir = Path(args.ckpt).parent
 
     args.origin_run_name = logdir.name
     logger = Logger(
-        logdir=logdir, resume=True, wandb_suffix=f"lin-{args.dataset}", args=args,
-        job_type="eval_linear"
+        logdir=logdir, resume=True, wandb_suffix=f"aug-{args.dataset}", args=args,
+        job_type="eval_aug_predict"
     )
 
     # DATASETS
@@ -151,14 +152,14 @@ def main(local_rank, args):
 
     # num_classes = datasets['num_classes']
 
-    if args.metric in ["top1", 'class-avg']:
-        criterion_fn = F.cross_entropy
-        metric = args.metric
-    elif args.metric == "r2":
-        criterion_fn = l1_criterion_fn()
-        metric = r2_fn()
-    else:
-        raise NotImplementedError((args.dataset, args.metric))
+    # if args.metric in ["top1", 'class-avg']:
+    #     criterion_fn = F.cross_entropy
+    #     metric = args.metric
+    # elif args.metric == "r2":
+    #     criterion_fn = l1_criterion_fn()
+    #     metric = r2_fn()
+    # else:
+    #     raise NotImplementedError((args.dataset, args.metric))
 
     engine_mock = get_engine_mock(ckpt_path=args.ckpt)
 
@@ -189,9 +190,9 @@ def main(local_rank, args):
     )
 
 
-    for e in args.epochs:
-        metrics = defaultdict()
-        for batch in trainloader:
+    for e in range(args.epochs):
+        metrics = defaultdict(list)
+        for batch in tqdm(trainloader, f"{e}: train"):
             (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
 
             with torch.no_grad():
@@ -203,8 +204,11 @@ def main(local_rank, args):
             ss_opt.step()
             for k, v in ss_losses.items():
                 metrics[f"train/{k}"].append(v.item())
+            
+            from pprint import pprint
+            pprint({k: v.item() for (k,v) in ss_losses.items()})
 
-        for batch in testloader:
+        for batch in tqdm(testloader, f"{e}: test"):
             with torch.no_grad():
                 (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
                 y1 = backbone(x1)
@@ -226,7 +230,7 @@ def main(local_rank, args):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--ckpt', type=str, required=True, nargs="+")
+    parser.add_argument('--ckpt', type=str, required=True)
     parser.add_argument('--dataset', type=str, default='cifar10')
     parser.add_argument('--datadir', type=str, default='/data')
     parser.add_argument('--batch-size', type=int, default=256)
@@ -236,6 +240,9 @@ if __name__ == '__main__':
     parser.add_argument('--momentum', type=float, default=0.9)
     parser.add_argument('--model', type=str, default='resnet18')
     parser.add_argument('--print-freq', type=int, default=10)
+    parser.add_argument('--distributed', action='store_true')
+    parser.add_argument("--epochs", type=int, default=10)
+
     args = parser.parse_args()
     args.backend = 'nccl' if args.distributed else None
     args.num_backbone_features = 512 if args.model.endswith('resnet18') else 2048
