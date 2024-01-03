@@ -22,7 +22,7 @@ def prepare_training_batch(batch, transforms, device) -> Tuple[
     Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]],
 ]:
     ((x, w),), _ = batch # TODO potentially expand to multiple views
-    return transforms(x).to(device)
+    return transforms(x.to(device)).detach()
 
 
 
@@ -301,16 +301,24 @@ def simclr( regenerator: ReGenerator,
         projector.train()
         projector_copy.train()
 
+        # from time import time
         for o in optimizers:
             o.zero_grad()
 
+        # s = time()
         X = prepare_training_batch(batch, transforms=t, device=device)
+        # t1 = time()
 
         true_embedding, regen_embedding, regen_X = regenerator(X, reset_backbone_copy=True)
+
+        # t2 = time()
         projector_copy.load_state_dict(projector.state_dict())
         projector_copy.zero_grad()
+
+        # t3 = time()
         z1 = F.normalize(projector(true_embedding))
-        z2 =  F.normalize(projector(regen_embedding))
+        z2 =  F.normalize(projector_copy(regen_embedding))
+        # t4 = time()
 
         z = torch.cat([z1, z2], 0)
         scores = torch.einsum('ik, jk -> ij', z, z).div(T)
@@ -322,10 +330,28 @@ def simclr( regenerator: ReGenerator,
         scores = scores.masked_fill(masks, float('-inf'))
         loss = F.cross_entropy(scores, labels)
         outputs = dict(loss=loss, z1=z1, z2=z2)
-        loss.backward()
+        # t5 = time()
 
+        loss.backward()
+        # t6 = time()
         for o in optimizers:
             o.step()
+
+        # t7 = time()
+        #
+        # times = dict(
+        #     batch_prepare=(t1-s),
+        #     regenerator=(t2-t1),
+        #     projector_copy_prepare=(t3-t2),
+        #     projectors=(t4-t3),
+        #     loss_calc=(t5-t4),
+        #     loss_back=(t6-t5),
+        #     opt_step=(t7-t6),
+        #     sum=(t7 - s)
+        # )
+
+        # from pprint import pprint
+        # pprint(times)
 
         return outputs
 
@@ -362,7 +388,7 @@ def barlow_twins(
         projector_copy.load_state_dict(projector.state_dict())
         projector_copy.zero_grad()
         z1 = projector(true_embedding)
-        z2 = projector(regen_embedding)
+        z2 = projector_copy(regen_embedding)
 
         c = z1.T @ z2
 
