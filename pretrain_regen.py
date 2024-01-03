@@ -564,7 +564,7 @@ def main(local_rank, args):
     elif args.framework == 'moco':
         models = moco(args, t1, t2)
     elif args.framework == 'simclr':
-        models = simclr(args, t1, t2)
+        models = simclr(args, t1)
     elif args.framework == "barlow_twins":
         models = barlow_twins(args, t1)
     elif args.framework == 'byol':
