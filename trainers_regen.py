@@ -288,33 +288,29 @@ def mocov3(
     return engine
 
 
-def simclr(backbone,
-           projector: AugProjector,
-           ss_predictor: Dict[str, nn.Module],
-           t1,
-           t2,
+def simclr( regenerator: ReGenerator,
+           projector: nn.Module,
+           projector_copy: nn.Module,
+           t,
            optimizers,
            device,
-           ss_objective: SSObjective,
-           aug_cond: List[str],
            T: float=0.2,
            ):
     def training_step(engine, batch):
-        backbone.train()
+        regenerator.train()
         projector.train()
+        projector_copy.train()
 
         for o in optimizers:
             o.zero_grad()
 
-        (x1, x2), (aug_d1, aug_d2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
-        aug_keys = sorted(aug_cond)
-        d1_cat = torch.concat([aug_d1[k] for k in aug_keys], dim=1)
-        d2_cat = torch.concat([aug_d2[k] for k in aug_keys], dim=1)
+        X = prepare_training_batch(batch, transforms=t, device=device)
 
-        y1 = backbone(x1)
-        y2 = backbone(x2)
-        z1 = F.normalize(projector(y1, d1_cat))
-        z2 = F.normalize(projector(y2, d2_cat))
+        true_embedding, regen_embedding, regen_X = regenerator(X, reset_backbone_copy=True)
+        projector_copy.load_state_dict(projector.state_dict())
+        projector_copy.zero_grad()
+        z1 = F.normalize(projector(true_embedding))
+        z2 =  F.normalize(projector(regen_embedding))
 
         z = torch.cat([z1, z2], 0)
         scores = torch.einsum('ik, jk -> ij', z, z).div(T)
@@ -326,11 +322,7 @@ def simclr(backbone,
         scores = scores.masked_fill(masks, float('-inf'))
         loss = F.cross_entropy(scores, labels)
         outputs = dict(loss=loss, z1=z1, z2=z2)
-
-        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
-        (loss + ss_losses['total']).backward()
-        for k, v in ss_losses.items():
-            outputs[f'ss/{k}'] = v
+        loss.backward()
 
         for o in optimizers:
             o.step()

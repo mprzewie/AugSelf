@@ -271,57 +271,41 @@ def mocov3(
 
 
 
-def simclr(args, t1, t2):
-    out_dim = 128
+def simclr(args, t, out_dim=128):
     device = idist.device()
+    build_model = partial(idist.auto_model, sync_bn=True)
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        only  = args.ss_only,
-        color_diff=args.ss_color_diff,
-        rot=args.ss_rot,
-        sol=args.ss_sol,
-    )
+    backbone = load_backbone(args)
+    decoder = load_decoder(args)
+    regenerator = build_model(ReGenerator(backbone, decoder))
 
-    build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    projector = build_model(load_mlp(args.num_backbone_features,
+                                     args.num_backbone_features,
+                                     out_dim,
+                                     num_layers=2,
+                                     last_bn=False))
 
-    sorted_aug_cond = sorted(args.aug_cond)
-
-    proj = AugProjector(
-            args,
-            proj_out_dim=out_dim,
-            proj_depth=2,
-        )
-    projector = build_model(proj) if ((not args.no_proj) or (args.aug_inj_type != AUG_INJECTION_TYPES.proj_none)) else proj
-
-
-    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
-    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
-    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+    projector_copy = deepcopy(projector)
+    projector = build_model(projector)
+    projector_copy = build_model(projector_copy)
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(projector.parameters())+ss_params)]
+    optimizers = [build_optim(list(backbone.parameters())+ list(decoder.parameters()) +  list(projector.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.simclr(
-        backbone=backbone,
+        regenerator=regenerator,
         projector=projector,
-        ss_predictor=ss_predictor,
-        t1=t1, t2=t2,
+        projector_copy=projector_copy,
+        t=t,
         optimizers=optimizers,
         device=device,
-        ss_objective=ss_objective,
-        aug_cond=sorted_aug_cond,
     )
 
     return dict(backbone=backbone,
                 projector=projector,
-                ss_predictor=ss_predictor,
+                decoder=decoder,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -340,15 +324,20 @@ def barlow_twins(
     decoder = load_decoder(args)
     regenerator = build_model(ReGenerator(backbone, decoder))
 
-    projector = build_model(load_mlp(
+
+    projector = load_mlp(
              args.num_backbone_features,
              out_dim,
              out_dim,
              num_layers=3,
              last_bn=True,
             last_bn_affine=False
-    ))
+    )
+
     projector_copy = deepcopy(projector)
+    projector = build_model(projector)
+    projector_copy = build_model(projector_copy)
+
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
 
@@ -692,7 +681,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='barlow_twins',
-                        choices=["barlow_twins"]
+                        choices=["barlow_twins", "simclr"]
                         # choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3", "swav"]
                         )
 
