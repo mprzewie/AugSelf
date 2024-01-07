@@ -522,6 +522,7 @@ def load_pretrain_datasets(dataset='cifar10',
         trainset = ImageNet100(datadir, split='train', transform=train_transform)
         valset   = ImageNet100(datadir, split='train', transform=test_transform)
         testset  = ImageNet100(datadir, split='val', transform=test_transform)
+        testset_train_like = ImageNet100(datadir, split='val', transform=train_transform)
 
     elif dataset == 'stl10':
         mean = torch.tensor([0.43, 0.42, 0.39])
@@ -552,6 +553,8 @@ def load_pretrain_datasets(dataset='cifar10',
         trainset = STL10(datadir, split='train+unlabeled', transform=train_transform, download=True)
         valset   = STL10(datadir, split='train',           transform=test_transform, download=True)
         testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+        testset_train_like = STL10(datadir, split='test',  transform=train_transform, download=True)
+
 
     elif dataset == 'stl10_rot':
         mean = torch.tensor([0.43, 0.42, 0.39])
@@ -610,6 +613,7 @@ def load_pretrain_datasets(dataset='cifar10',
     return dict(train=trainset,
                 val=valset,
                 test=testset,
+                test_train_like=testset_train_like,
                 t1=t1, t2=t2)
 
 def load_datasets(dataset='cifar10',

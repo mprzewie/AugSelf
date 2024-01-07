@@ -58,7 +58,7 @@ def main(local_rank, args):
                                pin_memory=True)
     trainloader = build_dataloader(datasets['train'], drop_last=False)
     # valloader   = build_dataloader(datasets['val'],   drop_last=False)
-    testloader  = build_dataloader(datasets['test'],  drop_last=False)
+    testloader  = build_dataloader(datasets['test_train_like'],  drop_last=False)
     # trainvalloader = build_dataloader(datasets["trainval"], drop_last=False)
 
 
@@ -110,8 +110,8 @@ def main(local_rank, args):
             for k, v in ss_losses.items():
                 metrics[f"train/{k}"].append(v.item())
             
-            from pprint import pprint
-            pprint({k: v.item() for (k,v) in ss_losses.items()})
+        from pprint import pprint
+        pprint({k: v.item() for (k,v) in ss_losses.items()})
 
         for batch in tqdm(testloader, f"{e}: test"):
             with torch.no_grad():
