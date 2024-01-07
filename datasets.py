@@ -699,6 +699,7 @@ def load_datasets(dataset='cifar10',
         num_classes = 37
 
     elif dataset == 'caltech101':
+        train_transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         D = Caltech101(datadir, transform=train_transform, download=True)
         trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
@@ -939,7 +940,7 @@ def load_datasets_for_cosine_sim(
             blur= GaussianBlur(23, (0.1, 2.0), p=1),
             # crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
             identity=nn.Sequential(),
-            # normalize=T.Normalize(mean, std), #TODO bug?
+            mixed=nn.Sequential(K.RandomHorizontalFlip(), ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8), K.RandomGrayscale(p=0.2), GaussianBlur(23, (0.1, 2.0)))
         )
 
         transforms = {
