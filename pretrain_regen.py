@@ -681,7 +681,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='barlow_twins',
-                        choices=["barlow_twins", "simclr"]
+                        choices=["barlow_twins", "simclr"] #simsiam?
                         # choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3", "swav"]
                         )
 
@@ -720,7 +720,8 @@ if __name__ == '__main__':
         "--dec-width", type=int, default=1
     )
 
-
+    parser.add_argument("--regen-alpha", type=float, default=1.0)
+    parser.add_argument("--ae-alpha", type=float, default=0.0)
     parser.add_argument("--ifm-alpha", type=float, default=0.0)
     parser.add_argument("--ifm-epsilon", type=float, default=0.1)
 

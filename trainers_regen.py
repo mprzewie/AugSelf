@@ -294,7 +294,10 @@ def simclr( regenerator: ReGenerator,
            t,
            optimizers,
            device,
-           T: float=0.2,
+           regen_lambda: float,
+           ae_lambda: float,
+
+            T: float=0.2,
            ):
     def training_step(engine, batch):
         regenerator.train()
@@ -309,7 +312,7 @@ def simclr( regenerator: ReGenerator,
         X = prepare_training_batch(batch, transforms=t, device=device)
         # t1 = time()
 
-        true_embedding, regen_embedding, regen_X = regenerator(X, reset_backbone_copy=True)
+        true_embedding, regen_embedding, regen_X, ae_loss = regenerator(X, reset_backbone_copy=True)
 
         # t2 = time()
         projector_copy.load_state_dict(projector.state_dict())
@@ -366,6 +369,8 @@ def barlow_twins(
            optimizers,
            device,
            batch_size: int,
+           regen_lambda: float,
+           ae_lambda,
            bt_lambda: float = 0.0051,
            ):
     def off_diagonal(x):
@@ -384,7 +389,7 @@ def barlow_twins(
 
         X = prepare_training_batch(batch, transforms=t, device=device)
 
-        true_embedding, regen_embedding, regen_X = regenerator(X, reset_backbone_copy=True)
+        true_embedding, regen_embedding, regen_X, ae_loss = regenerator(X, reset_backbone_copy=True)
         projector_copy.load_state_dict(projector.state_dict())
         projector_copy.zero_grad()
         z1 = projector(true_embedding)

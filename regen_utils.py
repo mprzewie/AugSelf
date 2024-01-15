@@ -29,8 +29,9 @@ class ReGenerator(nn.Module):
         assert X.shape == regen_X.shape, (X.shape, regen_X.shape)
         regen_embedding = self.backbone_copy(regen_X)
         assert true_embedding.shape == regen_embedding.shape, (true_embedding.shape, regen_embedding.shape)
+        ae_loss = ((X - regen_X) ** 2).mean()
 
-        return true_embedding, regen_embedding, regen_X
+        return true_embedding, regen_embedding, regen_X, ae_loss
 
 
 
