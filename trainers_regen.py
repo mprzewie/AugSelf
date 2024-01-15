@@ -337,7 +337,7 @@ def simclr(regenerator: ReGenerator,
         outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
         # t5 = time()
 
-        loss.backward()
+        total_loss.backward()
         # t6 = time()
         for o in optimizers:
             o.step()
@@ -411,7 +411,7 @@ def barlow_twins(
 
         outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
 
-        loss.backward()
+        total_loss.backward()
 
         for o in optimizers:
             o.step()
