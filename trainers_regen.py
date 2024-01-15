@@ -654,8 +654,8 @@ def regen_evaluator(
                 emb = backbone(x.to(device))
                 regen_x = decoder(emb)
 
-                x_img = (x.cpu().numpy().transpose((1, 2, 0)) * std) + mean
-                r_img = (regen_x.cpu().numpy().transpose((1, 2, 0)) * std) + mean
+                x_img = (x.cpu().numpy().transpose((0, 2, 3, 1)) * std) + mean
+                r_img = (regen_x.cpu().numpy().transpose((0, 2, 3, 1)) * std) + mean
 
                 break
 
