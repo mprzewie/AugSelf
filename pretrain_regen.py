@@ -301,6 +301,8 @@ def simclr(args, t, out_dim=128):
         t=t,
         optimizers=optimizers,
         device=device,
+        regen_lambda=args.regen_lambda,
+        ae_lambda=args.ae_lambda,
     )
 
     return dict(backbone=backbone,
@@ -382,7 +384,9 @@ def barlow_twins(
         optimizers=optimizers,
         device=device,
         t=t,
-        batch_size = args.batch_size
+        batch_size = args.batch_size,
+        regen_lambda=args.regen_lambda,
+        ae_lambda=args.ae_lambda,
     )
 
     return dict(backbone=backbone,
@@ -579,6 +583,13 @@ def main(local_rank, args):
                                       trainloader=valloader,
                                       testloader=testloader,
                                       device=device)
+    regen_evaluator = trainers.regen_evaluator(
+        backbone=models["backbone"],
+        decoder=models["decoder"],
+        testloader=testloader,
+        device=device,
+        dataset=args.dataset
+    )
 
     if args.distributed:
         @trainer.on(Events.EPOCH_STARTED)
@@ -601,8 +612,7 @@ def main(local_rank, args):
         logger.log(engine, engine.state.iteration,
                    print_msg=engine.state.iteration % args.print_freq == 0,
                    loss=loss,
-                   # ss_loss=ss_loss
-                   )
+        )
 
         if 'z1' in engine.state.output:
             with torch.no_grad():
@@ -622,7 +632,9 @@ def main(local_rank, args):
     @trainer.on(Events.EPOCH_COMPLETED(every=args.eval_freq))
     def evaluate(engine):
         acc = evaluator()
-        logger.log(engine, engine.state.epoch, acc=acc)
+        regen_plot = regen_evaluator()
+        logger.log(engine, engine.state.epoch, acc=acc, regen_plot=regen_plot)
+
 
     @trainer.on(Events.EPOCH_COMPLETED)
     def update_lr(engine):

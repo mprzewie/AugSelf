@@ -1,7 +1,9 @@
 import math
 from copy import deepcopy
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Callable
 
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -21,11 +23,8 @@ def prepare_training_batch(batch, transforms, device) -> Tuple[
     Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]],
     Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]],
 ]:
-    ((x, w),), _ = batch # TODO potentially expand to multiple views
+    ((x, w),), _ = batch  # TODO potentially expand to multiple views
     return transforms(x.to(device)).detach()
-
-
-
 
 
 def simsiam(backbone,
@@ -41,6 +40,7 @@ def simsiam(backbone,
             simclr_loss: bool = False
             ):
     raise NotImplementedError()
+
     def training_step(engine, batch):
         backbone.train()
         projector.train()
@@ -81,13 +81,15 @@ def simsiam(backbone,
         else:
             loss = 0.
 
-        outputs = dict(loss=loss)
+        total_loss = (regen_lambda * loss) + (ae_lambda * ae_loss)
+        outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
+
         if not ss_objective.only:
             outputs['z1'] = z1
             outputs['z2'] = z2
 
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
-        (loss+ss_losses['total']).backward()
+        (loss + ss_losses['total']).backward()
 
         for k, v in ss_losses.items():
             outputs[f'ss/{k}'] = v
@@ -141,7 +143,6 @@ def moco(backbone,
         target_backbone.train()
         target_projector.train()
 
-
         for o in optimizers:
             o.zero_grad()
 
@@ -173,7 +174,7 @@ def moco(backbone,
             logits_adv = torch.cat([l_pos - ifm_epsilon, l_neg + ifm_epsilon], dim=1).div(T)
             loss_adv = F.cross_entropy(logits_adv, labels)
             loss = loss + ifm_alpha * loss_adv
-            loss = loss / (1+ifm_alpha)
+            loss = loss / (1 + ifm_alpha)
 
         outputs = dict(loss=loss, z1=z1, z2=z2)
 
@@ -204,20 +205,20 @@ def moco(backbone,
     engine = Engine(training_step)
     return engine
 
-def mocov3(
-         backbone,
-         projector: AugProjector,
-         predictor: nn.Module,
-         ss_predictor: Dict[str, nn.Module],
-         t1,
-         t2,
-         optimizers,
-         device,
-         ss_objective: SSObjective,
-         aug_cond: List[str],
-         momentum=0.999,
-         T: float = 0.2,):
 
+def mocov3(
+        backbone,
+        projector: AugProjector,
+        predictor: nn.Module,
+        ss_predictor: Dict[str, nn.Module],
+        t1,
+        t2,
+        optimizers,
+        device,
+        ss_objective: SSObjective,
+        aug_cond: List[str],
+        momentum=0.999,
+        T: float = 0.2, ):
     target_backbone = deepcopy(backbone)
     target_projector = deepcopy(projector)
 
@@ -226,7 +227,7 @@ def mocov3(
             list(target_projector.parameters())
     ):
         p.requires_grad = False
-    
+
     def mv3_contrastive_loss(q, k):
         k = idist.all_gather(k)
         logits = torch.einsum('nc,mc->nm', [q, k]) / T
@@ -268,9 +269,7 @@ def mocov3(
             k1 = F.normalize(target_projector(target_backbone(x1), d1_cat), dim=1)
             k2 = F.normalize(target_projector(target_backbone(x2), d2_cat), dim=1)
 
-
-        loss = mv3_contrastive_loss(q1,k2) + mv3_contrastive_loss(q2,k1)
-            
+        loss = mv3_contrastive_loss(q1, k2) + mv3_contrastive_loss(q2, k1)
 
         outputs = dict(loss=loss, z1=torch.concat([q1, q2], dim=0), z2=torch.concat([k2, k1], dim=0))
         ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
@@ -288,7 +287,7 @@ def mocov3(
     return engine
 
 
-def simclr( regenerator: ReGenerator,
+def simclr(regenerator: ReGenerator,
            projector: nn.Module,
            projector_copy: nn.Module,
            t,
@@ -297,7 +296,7 @@ def simclr( regenerator: ReGenerator,
            regen_lambda: float,
            ae_lambda: float,
 
-            T: float=0.2,
+           T: float = 0.2,
            ):
     def training_step(engine, batch):
         regenerator.train()
@@ -320,7 +319,7 @@ def simclr( regenerator: ReGenerator,
 
         # t3 = time()
         z1 = F.normalize(projector(true_embedding))
-        z2 =  F.normalize(projector_copy(regen_embedding))
+        z2 = F.normalize(projector_copy(regen_embedding))
         # t4 = time()
 
         z = torch.cat([z1, z2], 0)
@@ -332,7 +331,10 @@ def simclr( regenerator: ReGenerator,
             masks[i, i] = True
         scores = scores.masked_fill(masks, float('-inf'))
         loss = F.cross_entropy(scores, labels)
-        outputs = dict(loss=loss, z1=z1, z2=z2)
+
+        total_loss = (regen_lambda * loss) + (ae_lambda * ae_loss)
+
+        outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
         # t5 = time()
 
         loss.backward()
@@ -361,18 +363,19 @@ def simclr( regenerator: ReGenerator,
     engine = Engine(training_step)
     return engine
 
+
 def barlow_twins(
-           regenerator: ReGenerator,
-           projector: nn.Module,
-           projector_copy: nn.Module,
-           t,
-           optimizers,
-           device,
-           batch_size: int,
-           regen_lambda: float,
-           ae_lambda,
-           bt_lambda: float = 0.0051,
-           ):
+        regenerator: ReGenerator,
+        projector: nn.Module,
+        projector_copy: nn.Module,
+        t,
+        optimizers,
+        device,
+        batch_size: int,
+        regen_lambda: float,
+        ae_lambda,
+        bt_lambda: float = 0.0051,
+):
     def off_diagonal(x):
         # return a flattened view of the off-diagonal elements of a square matrix
         n, m = x.shape
@@ -404,7 +407,9 @@ def barlow_twins(
         off_diag = off_diagonal(c).pow_(2).sum()
         loss = on_diag + bt_lambda * off_diag
 
-        outputs = dict(loss=loss, z1=z1, z2=z2)
+        total_loss = (regen_lambda * loss) + (ae_lambda * ae_loss)
+
+        outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
 
         loss.backward()
 
@@ -415,6 +420,7 @@ def barlow_twins(
 
     engine = Engine(training_step)
     return engine
+
 
 def byol(backbone,
          projector,
@@ -621,6 +627,46 @@ def collect_features(backbone,
         labels = idist.utils.all_gather(torch.cat(labels, 0).detach())
 
     return features, labels
+
+
+def regen_evaluator(
+        backbone, decoder,
+        testloader,
+        device,
+        dataset: str,
+        max_images: int = 5
+) -> Callable[[], plt.Figure]:
+    if dataset == "stl10":
+        mean = np.array([0.43, 0.42, 0.39])
+        std = np.array([0.27, 0.26, 0.27])
+    elif dataset == "imagenet100":
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+    else:
+        assert False, dataset
+
+    def evaluator():
+        backbone.eval()
+        decoder.eval()
+        with torch.no_grad():
+            for x, y in testloader:
+                x = x[:max_images]
+                emb = backbone(x.to(device))
+                regen_x = decoder(emb)
+
+                x_img = (x.cpu().numpy().transpose((1, 2, 0)) * std) + mean
+                r_img = (regen_x.cpu().numpy().transpose((1, 2, 0)) * std) + mean
+
+                break
+
+            fig, ax = plt.subplots(nrows=max_images, ncols=2, figsize=(2, 2 * max_images))
+            for i, (x, r) in enumerate(zip(x_img, r_img)):
+                ax[i][0].imshow(x)
+                ax[i][1].imshow(r)
+
+        return fig
+
+    return evaluator
 
 
 def nn_evaluator(backbone,
