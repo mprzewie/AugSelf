@@ -732,8 +732,8 @@ if __name__ == '__main__':
         "--dec-width", type=int, default=1
     )
 
-    parser.add_argument("--regen-alpha", type=float, default=1.0)
-    parser.add_argument("--ae-alpha", type=float, default=0.0)
+    parser.add_argument("--regen-lambda", type=float, default=1.0)
+    parser.add_argument("--ae-lambda", type=float, default=0.0)
     parser.add_argument("--ifm-alpha", type=float, default=0.0)
     parser.add_argument("--ifm-epsilon", type=float, default=0.1)
 
