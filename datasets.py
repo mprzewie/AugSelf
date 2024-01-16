@@ -704,6 +704,7 @@ def load_datasets(dataset='cifar10',
         num_classes = 37
 
     elif dataset == 'caltech101':
+        train_transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         D = Caltech101(datadir, transform=train_transform, download=True)
         trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
