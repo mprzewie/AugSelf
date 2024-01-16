@@ -17,7 +17,7 @@ from datasets import load_datasets
 from models import load_backbone
 from trainers import collect_features
 from utils import Logger, get_engine_mock
-
+import timm
 
 def build_step(X, Y, classifier, optimizer, w, criterion_fn):
     def step():
@@ -159,11 +159,18 @@ def main(local_rank, args):
         engine_mock = get_engine_mock(ckpt_path=ckpt_path)
 
         logger.log_msg(f"Evaluating {ckpt_path}")
-        ckpt = torch.load(ckpt_path, map_location=device)
         
-        
-        backbone = load_backbone(args)
-        backbone.load_state_dict(ckpt['backbone'])
+        if "spark" not in str(ckpt_path):
+            ckpt = torch.load(ckpt_path, map_location=device)
+
+
+            backbone = load_backbone(args)
+            backbone.load_state_dict(ckpt['backbone'])
+        else:
+            backbone  = timm.create_model('resnet50')
+            state = torch.load(ckpt_path, map_location=device)
+            backbone.load_state_dict(state.get('module', state), strict=False)
+            backbone.fc = nn.Identity()
 
         build_model = partial(idist.auto_model, sync_bn=True)
         backbone   = build_model(backbone)
