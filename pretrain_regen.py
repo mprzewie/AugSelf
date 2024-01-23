@@ -277,7 +277,7 @@ def simclr(args, t, out_dim=128):
 
     backbone = load_backbone_out_blocks(args)
     decoder = load_decoder(args)
-    regenerator = build_model(ReGenerator(backbone, decoder))
+    regenerator = build_model(ReGenerator(backbone, decoder, args.skip_connections))
 
     projector = build_model(load_mlp(args.num_backbone_features,
                                      args.num_backbone_features,
@@ -324,7 +324,7 @@ def barlow_twins(
     build_model  = partial(idist.auto_model, sync_bn=True)
     backbone     = load_backbone_out_blocks(args)
     decoder = load_decoder(args)
-    regenerator = build_model(ReGenerator(backbone, decoder))
+    regenerator = build_model(ReGenerator(backbone, decoder, args.skip_connections))
 
 
     projector = load_mlp(
@@ -588,7 +588,8 @@ def main(local_rank, args):
         decoder=models["decoder"],
         testloader=testloader,
         device=device,
-        dataset=args.dataset
+        dataset=args.dataset,
+        skip_connections=args.skip_connections
     )
 
     if args.distributed:
@@ -736,7 +737,12 @@ if __name__ == '__main__':
     parser.add_argument("--ae-lambda", type=float, default=0.0)
     parser.add_argument("--ifm-alpha", type=float, default=0.0)
     parser.add_argument("--ifm-epsilon", type=float, default=0.1)
-
+    parser.add_argument(
+        "--skip-connections", nargs="*", type=str,
+        choices=["l1", "l2", "l3", "l4"],
+        default=["l1", "l2", "l3", "l4"],
+        help="Augmentations to condition the projector on"
+    )
 
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256

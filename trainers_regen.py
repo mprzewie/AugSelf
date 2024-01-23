@@ -639,7 +639,8 @@ def regen_evaluator(
         testloader,
         device,
         dataset: str,
-        max_images: int = 5
+        skip_connections: List[str],
+    max_images: int = 5,
 ) -> Callable[[], plt.Figure]:
     if dataset == "stl10":
         mean = np.array([0.43, 0.42, 0.39])
@@ -651,7 +652,7 @@ def regen_evaluator(
         assert False, dataset
 
     def evaluator():
-        regen = ReGenerator(backbone, decoder)
+        regen = ReGenerator(backbone, decoder, skip_connections=skip_connections)
         regen.eval()
 
         with torch.no_grad():

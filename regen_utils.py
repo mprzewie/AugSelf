@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import List
 
 from torch import nn
 from torch.nn import functional as tnnf
@@ -10,12 +11,13 @@ class ReGenerator(nn.Module):
         self,
         backbone: ResnetOutBlocks,
         decoder: LightDecoder,
-
+        skip_connections: List[str]
     ):
         super().__init__()
         self.backbone = backbone
         self.decoder = decoder
         self.backbone_copy = deepcopy(self.backbone)
+        self.skip_connections = skip_connections
 
     def reset_backbone_copy(self):
         self.backbone_copy.load_state_dict(self.backbone.state_dict())
@@ -28,7 +30,16 @@ class ReGenerator(nn.Module):
 
         e = self.backbone(X)
         true_embedding = e["backbone_out"]
-        regen_X = self.decoder([e["l4"], e["l3"], e["l2"], e["l1"]])
+
+        decoder_inputs = []
+        for s in ["l4", "l3", "l2", "l1"]:
+            if s in self.skip_connections:
+                decoder_inputs.append(s)
+            else:
+                decoder_inputs.append(None)
+
+        regen_X = self.decoder(decoder_inputs)
+
         assert X.shape == regen_X.shape, (X.shape, regen_X.shape)
         regen_embedding = self.backbone_copy(regen_X)["backbone_out"]
         assert true_embedding.shape == regen_embedding.shape, (true_embedding.shape, regen_embedding.shape)
