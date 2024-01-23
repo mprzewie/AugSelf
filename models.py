@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from torchvision import models
+from torchvision.models import ConvNeXt
 
 import vits
 
@@ -43,6 +44,12 @@ def load_backbone(args):
         backbone = vits.vit_small()
         args.num_backbone_features = backbone.head.weight.shape[1]
         backbone.head = nn.Identity()
+
+    elif "convnext" in name:
+        backbone: ConvNeXt = models.__dict__[name]()
+        args.num_backbone_features = backbone.classifier[-1].weight.shape[1]
+        backbone.classifier = backbone.classifier[:-1]
+
     else:
         raise NotImplementedError(name)
 
