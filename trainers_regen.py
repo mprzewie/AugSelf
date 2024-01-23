@@ -620,6 +620,8 @@ def collect_features(backbone,
                 x = x.view(-1, c, h, w)
                 y = y.view(-1, 1).repeat(1, n).view(-1)
             z = backbone(x.to(device))
+            if isinstance(z, dict):
+                z = z["backbone_out"]
             if normalize:
                 z = F.normalize(z, dim=-1)
             features.append(z.to(dst).detach())
@@ -649,13 +651,13 @@ def regen_evaluator(
         assert False, dataset
 
     def evaluator():
-        backbone.eval()
-        decoder.eval()
+        regen = ReGenerator(backbone, decoder)
+        regen.eval()
+
         with torch.no_grad():
             for x, y in testloader:
                 x = x[:max_images]
-                emb = backbone(x.to(device))
-                regen_x = decoder(emb)
+                _, _, regen_x, _ = regen(x.to(device))
 
                 x_img = (x.cpu().numpy().transpose((0, 2, 3, 1)) * std) + mean
                 r_img = (regen_x.cpu().numpy().transpose((0, 2, 3, 1)) * std) + mean
