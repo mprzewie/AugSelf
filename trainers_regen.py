@@ -684,7 +684,10 @@ def nn_evaluator(backbone,
             features, labels = collect_features(backbone, trainloader, device)
             corrects, total = 0, 0
             for x, y in testloader:
-                z = F.normalize(backbone(x.to(device)), dim=-1)
+                z = backbone(x.to(device))
+                if isinstance(z, dict):
+                    z = z["backbone_out"]
+                z = F.normalize(z, dim=-1)
                 scores = torch.einsum('ik, jk -> ij', z, features)
                 preds = labels[scores.argmax(1)]
 
