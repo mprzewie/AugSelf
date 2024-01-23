@@ -34,7 +34,7 @@ class ReGenerator(nn.Module):
         decoder_inputs = []
         for s in ["l4", "l3", "l2", "l1"]:
             if s in self.skip_connections:
-                decoder_inputs.append(s)
+                decoder_inputs.append(e[s])
             else:
                 decoder_inputs.append(None)
 
