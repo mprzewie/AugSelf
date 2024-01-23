@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-
+from resnets import load_backbone_out_blocks
 from ignite.engine import Events
 import ignite.distributed as idist
 
@@ -20,7 +20,7 @@ from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_
     AUG_INJECTION_TYPES
 from datasets import load_pretrain_datasets
 from decoders import load_decoder
-from models import load_backbone, load_mlp, load_ss_predictor
+from models import load_mlp, load_ss_predictor
 import trainers_regen as trainers
 from regen_utils import ReGenerator
 from trainers import SSObjective
@@ -45,7 +45,7 @@ def simsiam(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
 
     # num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
     sorted_aug_cond = sorted(args.aug_cond)
@@ -120,7 +120,7 @@ def moco(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
 
 
     proj = AugProjector(
@@ -200,7 +200,7 @@ def mocov3(
     sorted_aug_cond = sorted(args.aug_cond or [])
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone = build_model(load_backbone(args))
+    backbone = build_model(load_backbone_out_blocks(args))
     
 
     projector: AugProjector= build_model(
@@ -275,7 +275,7 @@ def simclr(args, t, out_dim=128):
     device = idist.device()
     build_model = partial(idist.auto_model, sync_bn=True)
 
-    backbone = load_backbone(args)
+    backbone = load_backbone_out_blocks(args)
     decoder = load_decoder(args)
     regenerator = build_model(ReGenerator(backbone, decoder))
 
@@ -322,7 +322,7 @@ def barlow_twins(
 
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = load_backbone(args)
+    backbone     = load_backbone_out_blocks(args)
     decoder = load_decoder(args)
     regenerator = build_model(ReGenerator(backbone, decoder))
 
@@ -414,7 +414,7 @@ def byol(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
     projector    = build_model(load_mlp(args.num_backbone_features,
                                         h_dim,
                                         out_dim,
@@ -469,7 +469,7 @@ def swav(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
 
     sorted_aug_cond = sorted(args.aug_cond)
 

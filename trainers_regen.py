@@ -338,6 +338,9 @@ def simclr(regenerator: ReGenerator,
         # t5 = time()
 
         total_loss.backward()
+
+        # assert False, list(regenerator.decoder.parameters())[0].grad
+
         # t6 = time()
         for o in optimizers:
             o.step()
