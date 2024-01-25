@@ -82,7 +82,7 @@ class AugProjector(nn.Module):
             self.aug_processor_out = (
                 self.aug_nn_out
                 if self.aug_inj_type in [AUG_INJECTION_TYPES.proj_cat, AUG_INJECTION_TYPES.proj_rand]
-                else args.num_backbone_features if args.bkb_feat_dim is not None else args.bkb_feat_dim
+                else args.num_backbone_features if args.bkb_feat_dim is None else args.bkb_feat_dim
             )
 
             args.aug_processor_out = self.aug_processor_out
