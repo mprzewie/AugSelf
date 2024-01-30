@@ -286,12 +286,13 @@ def simclr(args, t, out_dim=128):
                 args.decoder_input_size, args.decoder_fm_size, args.decoder_fm_size)
         )
     )
-
-    projector = build_model(load_mlp(args.num_backbone_features,
+    projector = nn.ModuleDict()
+    for layer_id in args.inputs_to_projector:
+        projector[layer_id] = load_mlp(args.backbone_output_sizes[layer_id],
                                      args.num_backbone_features,
                                      out_dim,
                                      num_layers=2,
-                                     last_bn=False))
+                                     last_bn=False)
 
     projector_copy = deepcopy(projector)
     projector = build_model(projector)
@@ -311,6 +312,7 @@ def simclr(args, t, out_dim=128):
         device=device,
         regen_lambda=args.regen_lambda,
         ae_lambda=args.ae_lambda,
+        inputs_to_projector=args.inputs_to_projector
     )
 
     return dict(backbone=backbone,

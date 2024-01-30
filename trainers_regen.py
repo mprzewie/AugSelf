@@ -288,14 +288,14 @@ def mocov3(
 
 
 def simclr(regenerator: ReGenerator,
-           projector: nn.Module,
-           projector_copy: nn.Module,
+           projector: nn.ModuleDict,
+           projector_copy: nn.ModuleDict,
            t,
            optimizers,
            device,
            regen_lambda: float,
            ae_lambda: float,
-
+           inputs_to_projector: List[str],
            T: float = 0.2,
            ):
     def training_step(engine, batch):
@@ -317,24 +317,37 @@ def simclr(regenerator: ReGenerator,
         projector_copy.load_state_dict(projector.state_dict())
         projector_copy.zero_grad()
 
-        # t3 = time()
-        z1 = F.normalize(projector(true_embedding))
-        z2 = F.normalize(projector_copy(regen_embedding))
-        # t4 = time()
+        zs = dict()
 
-        z = torch.cat([z1, z2], 0)
-        scores = torch.einsum('ik, jk -> ij', z, z).div(T)
-        n = z1.shape[0]
-        labels = torch.tensor(list(range(n, 2 * n)) + list(range(0, n)), device=scores.device)
-        masks = torch.zeros_like(scores, dtype=torch.bool)
-        for i in range(2 * n):
-            masks[i, i] = True
-        scores = scores.masked_fill(masks, float('-inf'))
-        loss = F.cross_entropy(scores, labels)
+        ssl_losses = dict()
+        total_ssl_loss = 0
 
-        total_loss = (regen_lambda * loss) + (ae_lambda * ae_loss)
+        for layer_id in inputs_to_projector:
+            e_true = true_embedding[layer_id].mean(dim=(2,3))
+            e_regen = regen_embedding[layer_id].mean(dim=(2,3))
 
-        outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
+            z1 = F.normalize(projector[layer_id](e_true))
+            z2 = F.normalize(projector_copy[layer_id](e_regen))
+            z = torch.cat([z1, z2], 0)
+            scores = torch.einsum('ik, jk -> ij', z, z).div(T)
+            n = z1.shape[0]
+            labels = torch.tensor(list(range(n, 2 * n)) + list(range(0, n)), device=scores.device)
+            masks = torch.zeros_like(scores, dtype=torch.bool)
+            for i in range(2 * n):
+                masks[i, i] = True
+            scores = scores.masked_fill(masks, float('-inf'))
+            loss = F.cross_entropy(scores, labels)
+            ssl_losses[f"ssl_loss/{layer_id}"] = loss
+            total_ssl_loss = total_ssl_loss + loss
+
+            if layer_id == "l4":
+                zs["z1"] = z1
+                zs["z2"] = z2
+
+        ssl_losses["ssl_loss/total"] = total_ssl_loss
+        total_loss = (regen_lambda * total_ssl_loss) + (ae_lambda * ae_loss)
+
+        outputs = dict(loss=total_loss,  ae_loss=ae_loss, **ssl_losses, **zs)
         # t5 = time()
 
         total_loss.backward()
