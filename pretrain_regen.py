@@ -277,7 +277,15 @@ def simclr(args, t, out_dim=128):
 
     backbone = load_backbone_out_blocks(args)
     decoder = load_decoder(args)
-    regenerator = build_model(ReGenerator(backbone, decoder, args.skip_connections))
+    regenerator = build_model(
+        ReGenerator(
+            backbone, decoder,
+            skip_connections=args.skip_connections,
+            inputs_to_pool={l: args.backbone_output_sizes[l] for l in args.inputs_to_pool},
+            decoder_input_fm_shape=(
+                args.decoder_input_size, args.decoder_fm_size, args.decoder_fm_size)
+        )
+    )
 
     projector = build_model(load_mlp(args.num_backbone_features,
                                      args.num_backbone_features,
@@ -743,6 +751,21 @@ if __name__ == '__main__':
         default=["l1", "l2", "l3", "l4"],
         help="Augmentations to condition the projector on"
     )
+
+    parser.add_argument(
+        "--inputs-to-projector", nargs="*", type=str,
+        choices=["l1", "l2", "l3", "l4"],
+        default=["l4"],
+        help="Network outputs to apply the projector at"
+    )
+
+    parser.add_argument(
+        "--inputs-to-pool", nargs="*", type=str,
+        choices=["l1", "l2", "l3", "l4"],
+        default=["l4"],
+        help="Network outputs to pool together at the input to decoder"
+    )
+
 
     args = parser.parse_args()
     args.lr = args.base_lr * args.batch_size / 256

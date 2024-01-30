@@ -233,6 +233,8 @@ def load_decoder(args):
     else:
         raise NotImplementedError(args.model)
 
+    args.decoder_fm_size = fm_size
+    args.decoder_input_size = z_dim
     return LightDecoder(
         up_sample_ratio=ratio,
         width=z_dim,
