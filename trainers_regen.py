@@ -653,6 +653,8 @@ def regen_evaluator(
         device,
         dataset: str,
         skip_connections: List[str],
+        inputs_to_pool: Dict[str, int],
+        decoder_input_fm_shape: Tuple[int, int, int],
     max_images: int = 5,
 ) -> Callable[[], plt.Figure]:
     if dataset == "stl10":
@@ -665,7 +667,7 @@ def regen_evaluator(
         assert False, dataset
 
     def evaluator():
-        regen = ReGenerator(backbone, decoder, skip_connections=skip_connections)
+        regen = ReGenerator(backbone, decoder, skip_connections=skip_connections, inputs_to_pool=inputs_to_pool, decoder_input_fm_shape=decoder_input_fm_shape)
         regen.eval()
 
         with torch.no_grad():

@@ -599,7 +599,11 @@ def main(local_rank, args):
         testloader=testloader,
         device=device,
         dataset=args.dataset,
-        skip_connections=args.skip_connections
+        skip_connections=args.skip_connections,
+        inputs_to_pool={l: args.backbone_output_sizes[l] for l in args.inputs_to_pool},
+        decoder_input_fm_shape=(
+            args.decoder_input_size, args.decoder_fm_size, args.decoder_fm_size
+        )
     )
 
     if args.distributed:
