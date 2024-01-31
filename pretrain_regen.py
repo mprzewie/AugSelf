@@ -588,7 +588,7 @@ def main(local_rank, args):
         models = mocov3(args, t1, t2)
 
     trainer   = models['trainer']
-    evaluator = trainers.nn_evaluator(backbone=models['backbone'],
+    evaluator = trainers.nn_evaluator(backbone=models['regenerator'].backbone,
                                       trainloader=valloader,
                                       testloader=testloader,
                                       device=device)
