@@ -648,7 +648,7 @@ def collect_features(backbone,
 
 
 def regen_evaluator(
-        backbone, decoder,
+        regen: ReGenerator,
         testloader,
         device,
         dataset: str,
@@ -667,7 +667,6 @@ def regen_evaluator(
         assert False, dataset
 
     def evaluator():
-        regen = ReGenerator(backbone, decoder, skip_connections=skip_connections, inputs_to_pool=inputs_to_pool, decoder_input_fm_shape=decoder_input_fm_shape)
         regen.eval()
 
         with torch.no_grad():

@@ -315,9 +315,8 @@ def simclr(args, t, out_dim=128):
         inputs_to_projector=args.inputs_to_projector
     )
 
-    return dict(backbone=backbone,
+    return dict(regenerator=regenerator,
                 projector=projector,
-                decoder=decoder,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -594,8 +593,7 @@ def main(local_rank, args):
                                       testloader=testloader,
                                       device=device)
     regen_evaluator = trainers.regen_evaluator(
-        backbone=models["backbone"],
-        decoder=models["decoder"],
+        regen=models["regenerator"],
         testloader=testloader,
         device=device,
         dataset=args.dataset,
