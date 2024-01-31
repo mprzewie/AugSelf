@@ -750,7 +750,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--skip-connections", nargs="*", type=str,
         choices=["l1", "l2", "l3", "l4"],
-        default=["l1", "l2", "l3", "l4"],
+        default=["l4"],
         help="Augmentations to condition the projector on"
     )
 

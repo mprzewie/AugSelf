@@ -42,10 +42,10 @@ class ReGenerator(nn.Module):
         true_embedding = self.backbone(X)
 
         pooled_outputs = [torch.zeros(batch_size, 0).to(X.device)]
-        for l in self.inputs_to_pool:
-            o = true_embedding[l].mean(dim=(2,3))
+
+        for layer_id in self.inputs_to_pool:
+            o = true_embedding[layer_id].mean(dim=(2,3))
             pooled_outputs.append(o)
-            print(l, true_embedding[l].shape, o.shape)
 
         pooler_inputs = torch.cat(pooled_outputs, dim=1)
         pooler_outputs = self.pooler(pooler_inputs)
