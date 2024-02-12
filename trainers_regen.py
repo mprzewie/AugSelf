@@ -68,7 +68,7 @@ def simsiam(regenerator: ReGenerator,
             z2 = projector_copy[layer_id](
                 e_regen if regenerator.backbone_input == "real" else e_true
             )
-            p1 = predictor(z1)
+            p1 = predictor[layer_id](z1)
 
             loss = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
             ssl_losses[f"ssl_loss/{layer_id}"] = loss
