@@ -83,8 +83,7 @@ def simsiam(args, t, out_dim=2048):
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters()) + list(pooler.parameters())),
-                  build_optim(list(predictor.parameters()))]
+    optimizers = [build_optim(list(backbone.parameters())+ list(pooler.parameters())), build_optim(list(predictor.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.simsiam(regenerator=regenerator,
@@ -99,10 +98,8 @@ def simsiam(args, t, out_dim=2048):
                                inputs_to_projector=args.inputs_to_projector
                                )
 
-    return dict(backbone=backbone,
-                projector=cond_projector,
-                predictor=predictor,
-                ss_predictor=ss_predictor,
+    return dict(regenerator=regenerator,
+                projector=projector,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -610,7 +607,7 @@ def main(local_rank, args):
 
 
     if args.framework == 'simsiam':
-        models = simsiam(args, t1, t2)
+        models = simsiam(args, t1)
     elif args.framework == 'moco':
         models = moco(args, t1, t2)
     elif args.framework == 'simclr':
@@ -743,7 +740,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='barlow_twins',
-                        choices=["barlow_twins", "simclr"] #simsiam?
+                        choices=["barlow_twins", "simclr", "simsiam"]
                         # choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3", "swav"]
                         )
 
@@ -767,10 +764,10 @@ if __name__ == '__main__':
     )
 
 
-    parser.add_argument(
-        "--simsiam-use-negatives", action="store_true", default=False,
-        help="Simsiam with simclr loss"
-    )
+    # parser.add_argument(
+    #     "--simsiam-use-negatives", action="store_true", default=False,
+    #     help="Simsiam with simclr loss"
+    # )
     parser.add_argument(
         "--seed", type=int, default=None,
         help="Manual seed"

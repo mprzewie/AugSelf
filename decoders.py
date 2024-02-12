@@ -185,6 +185,7 @@ class LightDecoder(nn.Module):
             n + 1)]  # todo: the decoder's width follows a simple halfing rule; you can change it to any other rule
         bn2d = nn.SyncBatchNorm if sbn else nn.BatchNorm2d
         self.dec = nn.ModuleList([UNetBlock(cin, cout, bn2d) for (cin, cout) in zip(channels[:-1], channels[1:])])
+
         self.proj = nn.Conv2d(channels[-1], 3, kernel_size=1, stride=1, bias=True)
 
         self.initialize()

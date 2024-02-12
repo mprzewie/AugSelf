@@ -27,72 +27,64 @@ def prepare_training_batch(batch, transforms, device) -> Tuple[
     return transforms(x.to(device)).detach()
 
 
-def simsiam(backbone,
-            projector: AugProjector,
+def simsiam(regenerator: ReGenerator,
+            projector: nn.Module,
+            projector_copy: nn.Module,
             predictor: nn.Module,
-            ss_predictor: Dict[str, nn.Module],
-            t1,
-            t2,
+            t,
             optimizers,
             device,
-            ss_objective: SSObjective,
-            aug_cond,
-            simclr_loss: bool = False
+            regen_lambda: float,
+            ae_lambda: float,
+            inputs_to_projector: List[str],
             ):
-    raise NotImplementedError()
 
     def training_step(engine, batch):
-        backbone.train()
+        regenerator.train()
         projector.train()
+        projector_copy.train()
         predictor.train()
 
         for o in optimizers:
             o.zero_grad()
 
-        (x1, x2), (desc1, desc2), (diff1, diff2) = prepare_training_batch(batch, t1, t2, device)
-        y1, y2 = backbone(x1), backbone(x2)
+        X = prepare_training_batch(batch, transforms=t, device=device)
+        true_embedding, regen_embedding, regen_X, ae_loss = regenerator(X, reset_backbone_copy=True)
 
-        aug_ks = sorted(aug_cond)
-        d1_cat = torch.cat([desc1[k] for k in aug_ks], dim=1)
-        d2_cat = torch.cat([desc2[k] for k in aug_ks], dim=1)
+        projector_copy.load_state_dict(projector.state_dict())
+        projector_copy.zero_grad()
 
-        if True:  # not ss_objective.only:
-            z1 = projector(y1, d1_cat)
-            z2 = projector(y2, d2_cat)
+        zs = dict()
+        ssl_losses = dict()
+        total_ssl_loss = 0
+
+        for layer_id in inputs_to_projector:
+            e_true = true_embedding[layer_id].mean(dim=(2, 3))
+            e_regen = regen_embedding[layer_id].mean(dim=(2, 3))
+
+            z1 = projector[layer_id](
+                e_true if regenerator.backbone_input == "real" else e_regen
+            )
+            z2 = projector_copy[layer_id](
+                e_regen if regenerator.backbone_input == "real" else e_true
+            )
             p1 = predictor(z1)
-            p2 = predictor(z2)
 
-            if not simclr_loss:
-                loss1 = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
-                loss2 = F.cosine_similarity(p2, z1.detach(), dim=-1).mean().mul(-1)
-                loss = (loss1 + loss2).mul(0.5)
-            else:
-                T = 0.2
-                z = torch.cat([z1, z2], 0)
-                scores = torch.einsum('ik, jk -> ij', z, z).div(T)
-                n = z1.shape[0]
-                labels = torch.tensor(list(range(n, 2 * n)) + list(range(0, n)), device=scores.device)
-                masks = torch.zeros_like(scores, dtype=torch.bool)
-                for i in range(2 * n):
-                    masks[i, i] = True
-                scores = scores.masked_fill(masks, float('-inf'))
-                loss = F.cross_entropy(scores, labels)
+            loss = F.cosine_similarity(p1, z2.detach(), dim=-1).mean().mul(-1)
+            ssl_losses[f"ssl_loss/{layer_id}"] = loss
 
-        else:
-            loss = 0.
+            total_ssl_loss = total_ssl_loss + loss
 
-        total_loss = (regen_lambda * loss) + (ae_lambda * ae_loss)
-        outputs = dict(loss=total_loss, z1=z1, z2=z2, regen_loss=loss, ae_loss=ae_loss)
+            if layer_id == "l4":
+                zs["z1"] = z1
+                zs["z2"] = z2
 
-        if not ss_objective.only:
-            outputs['z1'] = z1
-            outputs['z2'] = z2
+        ssl_losses["ssl_loss/total"] = total_ssl_loss
 
-        ss_losses = ss_objective(ss_predictor, y1, y2, diff1, diff2)
-        (loss + ss_losses['total']).backward()
+        total_loss = (regen_lambda * total_ssl_loss) + (ae_lambda * ae_loss)
+        outputs = dict(loss=total_loss,  ae_loss=ae_loss, **ssl_losses, **zs)
 
-        for k, v in ss_losses.items():
-            outputs[f'ss/{k}'] = v
+        total_loss.backward()
 
         for o in optimizers:
             o.step()
@@ -326,8 +318,13 @@ def simclr(regenerator: ReGenerator,
             e_true = true_embedding[layer_id].mean(dim=(2,3))
             e_regen = regen_embedding[layer_id].mean(dim=(2,3))
 
-            z1 = F.normalize(projector[layer_id](e_true))
-            z2 = F.normalize(projector_copy[layer_id](e_regen))
+
+            z1 = F.normalize(projector[layer_id](
+                e_true if regenerator.backbone_input == "real" else e_regen
+            ))
+            z2 = F.normalize(projector_copy[layer_id](
+                e_regen if regenerator.backbone_input == "real" else e_true
+            ))
             z = torch.cat([z1, z2], 0)
             scores = torch.einsum('ik, jk -> ij', z, z).div(T)
             n = z1.shape[0]
