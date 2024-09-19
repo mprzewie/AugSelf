@@ -163,6 +163,12 @@ def main(local_rank, args):
         
         
         backbone = load_backbone(args)
+        if "regenerator" in ckpt:
+            ckpt["backbone"] = {
+                k.replace("backbone.", ""): v
+                for (k,v) in ckpt.items()
+                if k.startswith("backbone.")
+            }
         backbone.load_state_dict(ckpt['backbone'])
 
         build_model = partial(idist.auto_model, sync_bn=True)
