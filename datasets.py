@@ -502,7 +502,7 @@ def load_pretrain_datasets(dataset='cifar10',
                            num_views: int=2
                            ):
 
-    if dataset == 'imagenet100':
+    if "imagenet" in dataset:
         mean = torch.tensor([0.485, 0.456, 0.406])
         std  = torch.tensor([0.229, 0.224, 0.225])
         train_transform = MultiView(
@@ -524,9 +524,16 @@ def load_pretrain_datasets(dataset='cifar10',
                            GaussianBlur(23, (0.1, 2.0)),
                            K.Normalize(mean, std))
 
-        trainset = ImageNet100(datadir, split='train', transform=train_transform)
-        valset   = ImageNet100(datadir, split='train', transform=test_transform)
-        testset  = ImageNet100(datadir, split='val', transform=test_transform)
+        if dataset == "imagenet100":
+            trainset = ImageNet100(datadir, split='train', transform=train_transform)
+            valset   = ImageNet100(datadir, split='train', transform=test_transform)
+            testset  = ImageNet100(datadir, split='val', transform=test_transform)
+        else:
+            trainset = ImageFolder(os.path.join(datadir, "train"), transform=train_transform)
+            valset = ImageFolder(os.path.join(datadir, "train"), transform=test_transform)
+            testset = ImageFolder(os.path.join(datadir, "val"), transform=test_transform)
+
+
 
     elif dataset == 'stl10':
         mean = torch.tensor([0.43, 0.42, 0.39])
@@ -625,7 +632,7 @@ def load_datasets(dataset='cifar10',
 
     assert train_crop_mode in ["center", "random"]
 
-    if pretrain_data == 'imagenet100':
+    if 'imagenet' in pretrain_data:
         mean = torch.tensor([0.485, 0.456, 0.406])
         std  = torch.tensor([0.229, 0.224, 0.225])
         train_transform = T.Compose([T.Resize(224, interpolation=Image.BICUBIC),
