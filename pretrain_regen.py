@@ -12,90 +12,94 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-
+from resnets import load_backbone_out_blocks
 from ignite.engine import Events
 import ignite.distributed as idist
+from torchvision.models import resnet18
 
 from cond_utils import AUG_DESC_SIZE_CONFIG, AUG_STRATEGY, AugProjector, AUG_HN_TYPES, AUG_DESC_TYPES, \
     AUG_INJECTION_TYPES
 from datasets import load_pretrain_datasets
 from decoders import load_decoder
-from models import load_backbone, load_mlp, load_ss_predictor
+from models import load_mlp, load_ss_predictor
 import trainers_regen as trainers
-from regen_utils import ReGenerator
+from regen_utils import ReGenerator, Pooler
 from trainers import SSObjective
 from utils import Logger, get_first_free_port
 import vits
 
 
 
-def simsiam(args, t1, t2):
-    out_dim = 2048
+def simsiam(args, t, out_dim=2048):
     device = idist.device()
 
-    ss_objective = SSObjective(
-        crop  = args.ss_crop,
-        color = args.ss_color,
-        flip  = args.ss_flip,
-        blur  = args.ss_blur,
-        only  = args.ss_only,
-        color_diff=args.ss_color_diff,
-        rot=args.ss_rot,
-        sol=args.ss_sol,
-    )
-
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
 
     # num_aug_features = sum(AUG_DESC_SIZE_CONFIG.values())
-    sorted_aug_cond = sorted(args.aug_cond)
-    n_aug_feats = sum([AUG_DESC_SIZE_CONFIG[k] for k in sorted_aug_cond])
 
-
-    proj = AugProjector(
-            args,
-            proj_hidden_dim=out_dim,
-            proj_out_dim=out_dim,
-            proj_depth=2+int(args.dataset.startswith('imagenet')),
-            projector_last_bn=True,
-            projector_last_bn_affine=True
-
-        )
-    cond_projector = build_model(proj) if not args.no_proj else proj
-
-    predictor    = build_model(
-        load_mlp(out_dim,
-        out_dim // 4,
-        out_dim,
-        num_layers=2,
-        last_bn=False)
+    decoder = load_decoder(args)
+    pooler = Pooler(
+        inputs_to_pool={l: args.backbone_output_sizes[l] for l in args.inputs_to_pool},
+        decoder_input_fm_shape=(args.decoder_input_size, args.decoder_fm_size, args.decoder_fm_size)
     )
-    ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
-    ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
-    ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
+    regenerator = build_model(
+        ReGenerator(
+            backbone, decoder, pooler,
+            skip_connections=args.skip_connections,
+            backbone_input=args.backbone_input,
+        )
+    )
+    projector = nn.ModuleDict()
+    predictor = nn.ModuleDict()
+
+    for layer_id in args.inputs_to_projector:
+        projector[layer_id] = load_mlp(args.backbone_output_sizes[layer_id],
+                                       args.num_backbone_features,
+                                       out_dim,
+                                       num_layers=2,
+                                       last_bn=False)
+        predictor[layer_id] = load_mlp(out_dim,
+                                        out_dim // 4,
+                                        out_dim,
+                                        num_layers=2,
+                                        last_bn=False)
+
+    projector_copy = deepcopy(projector)
+    projector = build_model(projector)
+    projector_copy = build_model(projector_copy)
+    predictor = build_model(predictor)
+
+    # predictor    = build_model(
+    #     load_mlp(out_dim,
+    #     out_dim // 4,
+    #     out_dim,
+    #     num_layers=2,
+    #     last_bn=False)
+    # )
+    # ss_predictor = load_ss_predictor(args.num_backbone_features, ss_objective)
+    # ss_predictor = { k: build_model(v) for k, v in ss_predictor.items() }
+    # ss_params = sum([list(v.parameters()) for v in ss_predictor.values()], [])
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+list(cond_projector.parameters()) +ss_params),
-                  build_optim(list(predictor.parameters()))]
+    optimizers = [build_optim(list(backbone.parameters())+ list(pooler.parameters())), build_optim(list(predictor.parameters()))]
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
-    trainer = trainers.simsiam(backbone=backbone,
-                               projector=cond_projector,
+    trainer = trainers.simsiam(regenerator=regenerator,
+                                projector=projector,
+                                projector_copy=projector_copy,
                                predictor=predictor,
-                               ss_predictor=ss_predictor,
-                               t1=t1, t2=t2,
+                               t=t,
                                optimizers=optimizers,
                                device=device,
-                               ss_objective=ss_objective,
-                               aug_cond=sorted_aug_cond,
-                               simclr_loss = args.simsiam_use_negatives
+                               regen_lambda=args.regen_lambda,
+                               ae_lambda=args.ae_lambda,
+                               inputs_to_projector=args.inputs_to_projector
                                )
 
-    return dict(backbone=backbone,
-                projector=cond_projector,
-                predictor=predictor,
-                ss_predictor=ss_predictor,
+    return dict(regenerator=regenerator,
+                projector=projector,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -120,7 +124,7 @@ def moco(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
 
 
     proj = AugProjector(
@@ -200,7 +204,7 @@ def mocov3(
     sorted_aug_cond = sorted(args.aug_cond or [])
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone = build_model(load_backbone(args))
+    backbone = build_model(load_backbone_out_blocks(args))
     
 
     projector: AugProjector= build_model(
@@ -275,15 +279,48 @@ def simclr(args, t, out_dim=128):
     device = idist.device()
     build_model = partial(idist.auto_model, sync_bn=True)
 
-    backbone = load_backbone(args)
-    decoder = load_decoder(args)
-    regenerator = build_model(ReGenerator(backbone, decoder))
+    backbone = load_backbone_out_blocks(args)
 
-    projector = build_model(load_mlp(args.num_backbone_features,
+    if args.pretrained_bkb is not None:
+        if args.pretrained_bkb == "tv":
+            sd = {
+                k: v
+                for (k,v) in resnet18(pretrained=True).state_dict().items()
+                if not k.startswith("fc")
+            }
+            ckpt = {
+                "backbone": sd
+            }
+
+        else:
+            ckpt = torch.load(args.pretrained_bkb, map_location=device)
+            if "regenerator" in ckpt:
+                ckpt["backbone"] = {
+                    k.replace("backbone.", ""): v
+                    for (k, v) in ckpt.items()
+                    if k.startswith("backbone.")
+                }
+        backbone.load_state_dict(ckpt['backbone'])
+
+    decoder = load_decoder(args)
+    pooler = Pooler(
+        inputs_to_pool={l: args.backbone_output_sizes[l] for l in args.inputs_to_pool},
+            decoder_input_fm_shape=(args.decoder_input_size, args.decoder_fm_size, args.decoder_fm_size)
+        )
+    regenerator = build_model(
+        ReGenerator(
+            backbone, decoder, pooler,
+            skip_connections=args.skip_connections,
+            backbone_input=args.backbone_input,
+        )
+    )
+    projector = nn.ModuleDict()
+    for layer_id in args.inputs_to_projector:
+        projector[layer_id] = load_mlp(args.backbone_output_sizes[layer_id],
                                      args.num_backbone_features,
                                      out_dim,
                                      num_layers=2,
-                                     last_bn=False))
+                                     last_bn=False)
 
     projector_copy = deepcopy(projector)
     projector = build_model(projector)
@@ -291,7 +328,13 @@ def simclr(args, t, out_dim=128):
 
     SGD = partial(optim.SGD, lr=args.lr, weight_decay=args.wd, momentum=args.momentum)
     build_optim = lambda x: idist.auto_optim(SGD(x))
-    optimizers = [build_optim(list(backbone.parameters())+ list(decoder.parameters()) +  list(projector.parameters()))]
+    optimizers = [build_optim(list(backbone.parameters())+ list(decoder.parameters()) + list(pooler.parameters()) + list(projector.parameters()))]
+
+    if args.pretrained_bkb is not None:
+        if not args.pretrained_bkb_train:
+            print("Since I'm using a pretrained backbone, I won't be optimizing it.")
+            optimizers = [build_optim(list(decoder.parameters()) + list(pooler.parameters()) + list(projector.parameters()))]
+
     schedulers = [optim.lr_scheduler.CosineAnnealingLR(optimizers[0], args.max_epochs)]
 
     trainer = trainers.simclr(
@@ -303,11 +346,11 @@ def simclr(args, t, out_dim=128):
         device=device,
         regen_lambda=args.regen_lambda,
         ae_lambda=args.ae_lambda,
+        inputs_to_projector=args.inputs_to_projector
     )
 
-    return dict(backbone=backbone,
+    return dict(regenerator=regenerator,
                 projector=projector,
-                decoder=decoder,
                 optimizers=optimizers,
                 schedulers=schedulers,
                 trainer=trainer)
@@ -322,9 +365,9 @@ def barlow_twins(
 
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = load_backbone(args)
+    backbone     = load_backbone_out_blocks(args)
     decoder = load_decoder(args)
-    regenerator = build_model(ReGenerator(backbone, decoder))
+    regenerator = build_model(ReGenerator(backbone, decoder, args.skip_connections))
 
 
     projector = load_mlp(
@@ -414,7 +457,7 @@ def byol(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
     projector    = build_model(load_mlp(args.num_backbone_features,
                                         h_dim,
                                         out_dim,
@@ -469,7 +512,7 @@ def swav(args, t1, t2):
     )
 
     build_model  = partial(idist.auto_model, sync_bn=True)
-    backbone     = build_model(load_backbone(args))
+    backbone     = build_model(load_backbone_out_blocks(args))
 
     sorted_aug_cond = sorted(args.aug_cond)
 
@@ -564,7 +607,7 @@ def main(local_rank, args):
 
 
     if args.framework == 'simsiam':
-        models = simsiam(args, t1, t2)
+        models = simsiam(args, t1)
     elif args.framework == 'moco':
         models = moco(args, t1, t2)
     elif args.framework == 'simclr':
@@ -579,16 +622,20 @@ def main(local_rank, args):
         models = mocov3(args, t1, t2)
 
     trainer   = models['trainer']
-    evaluator = trainers.nn_evaluator(backbone=models['backbone'],
+    evaluator = trainers.nn_evaluator(backbone=models['regenerator'].backbone,
                                       trainloader=valloader,
                                       testloader=testloader,
                                       device=device)
     regen_evaluator = trainers.regen_evaluator(
-        backbone=models["backbone"],
-        decoder=models["decoder"],
+        regen=models["regenerator"],
         testloader=testloader,
         device=device,
-        dataset=args.dataset
+        dataset=args.dataset,
+        skip_connections=args.skip_connections,
+        inputs_to_pool={l: args.backbone_output_sizes[l] for l in args.inputs_to_pool},
+        decoder_input_fm_shape=(
+            args.decoder_input_size, args.decoder_fm_size, args.decoder_fm_size
+        )
     )
 
     if args.distributed:
@@ -693,7 +740,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', action='store_true')
 
     parser.add_argument('--framework', type=str, default='barlow_twins',
-                        choices=["barlow_twins", "simclr"] #simsiam?
+                        choices=["barlow_twins", "simclr", "simsiam"]
                         # choices=["moco", "simsiam", "simclr", "barlow_twins", "mocov3", "swav"]
                         )
 
@@ -717,10 +764,10 @@ if __name__ == '__main__':
     )
 
 
-    parser.add_argument(
-        "--simsiam-use-negatives", action="store_true", default=False,
-        help="Simsiam with simclr loss"
-    )
+    # parser.add_argument(
+    #     "--simsiam-use-negatives", action="store_true", default=False,
+    #     help="Simsiam with simclr loss"
+    # )
     parser.add_argument(
         "--seed", type=int, default=None,
         help="Manual seed"
@@ -736,6 +783,31 @@ if __name__ == '__main__':
     parser.add_argument("--ae-lambda", type=float, default=0.0)
     parser.add_argument("--ifm-alpha", type=float, default=0.0)
     parser.add_argument("--ifm-epsilon", type=float, default=0.1)
+    parser.add_argument(
+        "--skip-connections", nargs="*", type=str,
+        choices=["l1", "l2", "l3", "l4"],
+        default=[],
+        help="Augmentations to condition the projector on"
+    )
+
+    parser.add_argument(
+        "--inputs-to-projector", nargs="*", type=str,
+        choices=["l1", "l2", "l3", "l4"],
+        default=["l4"],
+        help="Network outputs to apply the projector at"
+    )
+
+    parser.add_argument(
+        "--inputs-to-pool", nargs="*", type=str,
+        choices=["l1", "l2", "l3", "l4"],
+        default=["l4"],
+        help="Network outputs to pool together at the input to decoder"
+    )
+
+    parser.add_argument("--pretrained-bkb", type=str, default=None)
+    parser.add_argument("--pretrained-bkb-train", action="store_true")
+    parser.add_argument("--backbone-input", default="real", choices=["real", "gen"])
+
 
 
     args = parser.parse_args()

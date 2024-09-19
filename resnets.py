@@ -133,8 +133,20 @@ def load_backbone_out_blocks(args):
 
     if name == "resnet18":
         backbone = resnet18(zero_init_residual=True)
+        output_sizes = {
+            "l1": 64,
+            "l2": 128,
+            "l3": 256,
+            "l4": 512
+        }
     elif name == "resnet50":
         backbone = resnet50(zero_init_residual=True)
+        output_sizes = {
+            "l1": 256,
+            "l2": 512,
+            "l3": 1024,
+            "l4": 2048
+        }
 
     elif name == "vit_small":
         backbone =vit_small()
@@ -148,6 +160,7 @@ def load_backbone_out_blocks(args):
         backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         backbone.maxpool = nn.Identity()
     args.num_backbone_features = backbone.fc.weight.shape[1]
+    args.backbone_output_sizes = output_sizes
     backbone.fc = nn.Identity()
     reset_parameters(backbone)
     return backbone

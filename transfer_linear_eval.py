@@ -165,12 +165,19 @@ def main(local_rank, args):
 
 
             backbone = load_backbone(args)
+            if "regenerator" in ckpt:
+                ckpt["backbone"] = {
+                    k.replace("backbone.", ""): v
+                    for (k,v) in ckpt.items()
+                    if k.startswith("backbone.")
+                }
             backbone.load_state_dict(ckpt['backbone'])
         else:
             backbone  = timm.create_model('resnet50')
             state = torch.load(ckpt_path, map_location=device)
             backbone.load_state_dict(state.get('module', state), strict=False)
             backbone.fc = nn.Identity()
+
 
         build_model = partial(idist.auto_model, sync_bn=True)
         backbone   = build_model(backbone)
