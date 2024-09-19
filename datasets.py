@@ -528,11 +528,13 @@ def load_pretrain_datasets(dataset='cifar10',
             trainset = ImageNet100(datadir, split='train', transform=train_transform)
             valset   = ImageNet100(datadir, split='train', transform=test_transform)
             testset  = ImageNet100(datadir, split='val', transform=test_transform)
+            testset_train_like = ImageNet100(datadir, split='val', transform=train_transform)
+
         else:
             trainset = ImageFolder(os.path.join(datadir, "train"), transform=train_transform)
             valset = ImageFolder(os.path.join(datadir, "train"), transform=test_transform)
             testset = ImageFolder(os.path.join(datadir, "val"), transform=test_transform)
-
+            testset_train_like =  ImageFolder(os.path.join(datadir, "val"), transform=train_transform)
 
 
     elif dataset == 'stl10':
@@ -564,6 +566,8 @@ def load_pretrain_datasets(dataset='cifar10',
         trainset = STL10(datadir, split='train+unlabeled', transform=train_transform, download=True)
         valset   = STL10(datadir, split='train',           transform=test_transform, download=True)
         testset  = STL10(datadir, split='test',            transform=test_transform, download=True)
+        testset_train_like = STL10(datadir, split='test',  transform=train_transform, download=True)
+
 
     elif dataset == 'stl10_rot':
         mean = torch.tensor([0.43, 0.42, 0.39])
@@ -622,6 +626,7 @@ def load_pretrain_datasets(dataset='cifar10',
     return dict(train=trainset,
                 val=valset,
                 test=testset,
+                test_train_like=testset_train_like,
                 t1=t1, t2=t2)
 
 def load_datasets(dataset='cifar10',
@@ -711,6 +716,7 @@ def load_datasets(dataset='cifar10',
         num_classes = 37
 
     elif dataset == 'caltech101':
+        train_transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         transform.transforms.insert(0, T.Lambda(lambda img: img.convert('RGB')))
         D = Caltech101(datadir, transform=train_transform, download=True)
         trn_indices, val_indices, tst_indices = torch.load('splits/caltech101.pth')
@@ -951,7 +957,7 @@ def load_datasets_for_cosine_sim(
             blur= GaussianBlur(23, (0.1, 2.0), p=1),
             # crop=RandomResizedCrop(224, scale=(0.2, 1.0)),
             identity=nn.Sequential(),
-            # normalize=T.Normalize(mean, std), #TODO bug?
+            mixed=nn.Sequential(K.RandomHorizontalFlip(), ColorJitter(0.4, 0.4, 0.4, 0.1, p=0.8), K.RandomGrayscale(p=0.2), GaussianBlur(23, (0.1, 2.0)))
         )
 
         transforms = {
